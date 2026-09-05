@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Thunder Play</string>
+    <string name="download_channel_name">Downloads</string>
+    <string name="download_channel_description">Progress while tracks are being synced</string>
+</resources>

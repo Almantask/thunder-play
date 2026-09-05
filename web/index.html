@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Thunder Play</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f7f7f8;
+    --surface: #ffffff;
+    --border: #e3e3e7;
+    --text: #16161a;
+    --muted: #6b6b76;
+    --accent: #2c5ea8;
+    --accent-soft: #e8effa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111114;
+      --surface: #1b1b20;
+      --border: #2c2c34;
+      --text: #f2f2f5;
+      --muted: #9a9aa6;
+      --accent: #9fc9ff;
+      --accent-soft: #1e2c40;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 0 0 128px;
+  }
+  header {
+    padding: 24px 20px 12px;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .meta { color: var(--muted); font-size: 13px; }
+  main { max-width: 720px; margin: 0 auto; padding: 0 12px; }
+  ol { list-style: none; margin: 0; padding: 0; }
+  li {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px; border-radius: 10px;
+    background: var(--surface); border: 1px solid var(--border);
+    margin-bottom: 8px; cursor: pointer;
+  }
+  li:hover { border-color: var(--accent); }
+  li[aria-current="true"] { background: var(--accent-soft); border-color: var(--accent); }
+  .num { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 22px; font-size: 13px; }
+  .title { flex: 1; min-width: 0; }
+  .title strong { display: block; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .title span { color: var(--muted); font-size: 12.5px; }
+  footer {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    background: var(--surface); border-top: 1px solid var(--border);
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  }
+  .bar { max-width: 720px; margin: 0 auto; display: flex; align-items: center; gap: 14px; }
+  .now { flex: 1; min-width: 0; }
+  .now strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .now span { color: var(--muted); font-size: 12.5px; }
+  button {
+    background: none; border: 1px solid var(--border); color: var(--text);
+    width: 44px; height: 44px; border-radius: 50%; cursor: pointer;
+    font-size: 17px; display: grid; place-items: center;
+  }
+  button:disabled { opacity: 0.35; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+  audio { width: 100%; margin-top: 10px; }
+  .notice { max-width: 520px; margin: 72px auto; padding: 0 24px; text-align: center; }
+  .notice h2 { font-size: 19px; margin: 0 0 8px; }
+  .notice p { color: var(--muted); margin: 0; }
+</style>
+</head>
+<body>
+<div id="app"><div class="notice"><h2>Loading…</h2></div></div>
+<script src="/config.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  var app = document.getElementById("app");
+  var cfg = window.THUNDERPLAY_CONFIG || {};
+
+  function notice(heading, detail) {
+    app.innerHTML = "";
+    var wrap = document.createElement("div");
+    wrap.className = "notice";
+    var h = document.createElement("h2");
+    h.textContent = heading;
+    var p = document.createElement("p");
+    p.textContent = detail || "";
+    wrap.appendChild(h);
+    wrap.appendChild(p);
+    app.appendChild(wrap);
+  }
+
+  // The hosting rewrite serves /p/<id>; the ?s= form is a fallback if that rewrite is
+  // ever missing, so a link still resolves rather than showing an empty page.
+  var shareId = (location.pathname.match(/\/p\/([^/?#]+)/) || [])[1] ||
+                new URLSearchParams(location.search).get("s");
+  if (!shareId) {
+    notice("Nothing to play", "This link is missing its playlist id.");
+    return;
+  }
+  if (!cfg.projectId || !cfg.apiKey) {
+    notice("Not configured", "Run tools/gen-web-config.ps1 and redeploy hosting.");
+    return;
+  }
+
+  // Firestore's REST API returns typed values ({stringValue}, {integerValue}, ...). Unwrap them
+  // rather than pulling in the whole Firebase SDK, which would dwarf this page.
+  function decode(value) {
+    if (value === null || value === undefined) return null;
+    if ("stringValue" in value) return value.stringValue;
+    if ("integerValue" in value) return Number(value.integerValue);
+    if ("doubleValue" in value) return value.doubleValue;
+    if ("booleanValue" in value) return value.booleanValue;
+    if ("nullValue" in value) return null;
+    if ("arrayValue" in value) return (value.arrayValue.values || []).map(decode);
+    if ("mapValue" in value) return decodeFields(value.mapValue.fields || {});
+    return null;
+  }
+
+  function decodeFields(fields) {
+    var out = {};
+    Object.keys(fields).forEach(function (k) { out[k] = decode(fields[k]); });
+    return out;
+  }
+
+  var url = "https://firestore.googleapis.com/v1/projects/" + encodeURIComponent(cfg.projectId) +
+            "/databases/(default)/documents/shares/" + encodeURIComponent(shareId) +
+            "?key=" + encodeURIComponent(cfg.apiKey);
+
+  fetch(url)
+    .then(function (res) {
+      // The security rules reject a read once expiresAt has passed, so 403 and 404 both mean
+      // "this link is no longer usable" from the visitor's point of view.
+      if (res.status === 403 || res.status === 404) return null;
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
+    })
+    .then(function (doc) {
+      if (!doc || !doc.fields) {
+        notice("This link has expired", "Shared playlists stay live for a limited time. Ask for a new link.");
+        return;
+      }
+      var share = decodeFields(doc.fields);
+      if (share.revoked || !share.expiresAt || share.expiresAt <= Date.now()) {
+        notice("This link has expired", "Shared playlists stay live for a limited time. Ask for a new link.");
+        return;
+      }
+      render(share);
+    })
+    .catch(function (err) {
+      notice("Could not load this playlist", String(err && err.message ? err.message : err));
+    });
+
+  function expiryLabel(expiresAt) {
+    var ms = expiresAt - Date.now();
+    var hours = Math.round(ms / 3600000);
+    if (hours < 1) return "expires within the hour";
+    if (hours < 24) return "expires in " + hours + " hour" + (hours === 1 ? "" : "s");
+    var days = Math.round(hours / 24);
+    return "expires in " + days + " day" + (days === 1 ? "" : "s");
+  }
+
+  function render(share) {
+    var tracks = (share.tracks || []).filter(function (t) { return t && t.url; });
+    if (!tracks.length) {
+      notice("Empty playlist", "There is nothing in this share.");
+      return;
+    }
+
+    app.innerHTML = "";
+
+    var header = document.createElement("header");
+    var h1 = document.createElement("h1");
+    h1.textContent = share.name || "Shared playlist";
+    var meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = tracks.length + (tracks.length === 1 ? " track" : " tracks") +
+                       " · " + expiryLabel(share.expiresAt);
+    header.appendChild(h1);
+    header.appendChild(meta);
+
+    var main = document.createElement("main");
+    var list = document.createElement("ol");
+    tracks.forEach(function (track, i) {
+      var li = document.createElement("li");
+      li.dataset.index = String(i);
+
+      var num = document.createElement("div");
+      num.className = "num";
+      num.textContent = String(i + 1);
+
+      var title = document.createElement("div");
+      title.className = "title";
+      var strong = document.createElement("strong");
+      strong.textContent = track.title || "Untitled";
+      var span = document.createElement("span");
+      span.textContent = [track.category, track.level].filter(Boolean).join(" / ");
+      title.appendChild(strong);
+      title.appendChild(span);
+
+      li.appendChild(num);
+      li.appendChild(title);
+      li.addEventListener("click", function () { play(i); });
+      list.appendChild(li);
+    });
+    main.appendChild(list);
+
+    var footer = document.createElement("footer");
+    var bar = document.createElement("div");
+    bar.className = "bar";
+
+    var prev = button("‹", "Previous");
+    var toggle = button("▶", "Play");
+    toggle.className = "primary";
+    var next = button("›", "Next");
+
+    var now = document.createElement("div");
+    now.className = "now";
+    var nowTitle = document.createElement("strong");
+    nowTitle.textContent = tracks[0].title || "Untitled";
+    var nowSub = document.createElement("span");
+    nowSub.textContent = "Tap a track to start";
+    now.appendChild(nowTitle);
+    now.appendChild(nowSub);
+
+    bar.appendChild(prev);
+    bar.appendChild(toggle);
+    bar.appendChild(next);
+    bar.appendChild(now);
+
+    var audio = document.createElement("audio");
+    audio.controls = true;
+    audio.preload = "metadata";
+
+    footer.appendChild(bar);
+    footer.appendChild(audio);
+
+    app.appendChild(header);
+    app.appendChild(main);
+    app.appendChild(footer);
+
+    var index = -1;
+
+    function button(label, aria) {
+      var b = document.createElement("button");
+      b.textContent = label;
+      b.setAttribute("aria-label", aria);
+      return b;
+    }
+
+    function highlight() {
+      Array.prototype.forEach.call(list.children, function (li, i) {
+        li.setAttribute("aria-current", i === index ? "true" : "false");
+      });
+      prev.disabled = index <= 0;
+      next.disabled = index >= tracks.length - 1;
+    }
+
+    function play(i) {
+      if (i < 0 || i >= tracks.length) return;
+      index = i;
+      var track = tracks[i];
+      audio.src = track.url;
+      audio.play().catch(function () { /* autoplay refused; the controls still work */ });
+      nowTitle.textContent = track.title || "Untitled";
+      nowSub.textContent = [track.category, track.level].filter(Boolean).join(" / ");
+      highlight();
+      publishMetadata(track);
+    }
+
+    // Gives the listener real lock-screen controls in their own browser.
+    function publishMetadata(track) {
+      if (!("mediaSession" in navigator)) return;
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: track.title || "Untitled",
+        artist: track.category || "",
+        album: share.name || "Shared playlist"
+      });
+      navigator.mediaSession.setActionHandler("play", function () { audio.play(); });
+      navigator.mediaSession.setActionHandler("pause", function () { audio.pause(); });
+      navigator.mediaSession.setActionHandler("previoustrack", function () { play(index - 1); });
+      navigator.mediaSession.setActionHandler("nexttrack", function () { play(index + 1); });
+    }
+
+    prev.addEventListener("click", function () { play(index - 1); });
+    next.addEventListener("click", function () { play(index + 1); });
+    toggle.addEventListener("click", function () {
+      if (index < 0) { play(0); return; }
+      if (audio.paused) audio.play(); else audio.pause();
+    });
+
+    audio.addEventListener("play", function () {
+      toggle.textContent = "❚❚";
+      toggle.setAttribute("aria-label", "Pause");
+    });
+    audio.addEventListener("pause", function () {
+      toggle.textContent = "▶";
+      toggle.setAttribute("aria-label", "Play");
+    });
+    audio.addEventListener("ended", function () {
+      if (index < tracks.length - 1) play(index + 1);
+    });
+
+    highlight();
+  }
+})();
+</script>
+</body>
+</html>

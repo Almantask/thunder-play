@@ -1,0 +1,26 @@
+# Secrets — never commit
+app/src/main/assets/drive-service-account.json
+local.properties
+
+# Build output
+build/
+app/build/
+.gradle/
+*.apk
+*.aab
+captures/
+
+# IDE
+.idea/
+*.iml
+.kotlin/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (web player tooling, if any)
+node_modules/
+
+# Firebase CLI local cache
+.firebase/

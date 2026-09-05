@@ -1,0 +1,332 @@
+package com.thunderplay.ui.player
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.thunderplay.data.TrackEntity
+import com.thunderplay.library.TrackDescriptors
+import com.thunderplay.playback.NowPlaying
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+/** Docked bar above the navigation; visible whenever something is queued. */
+@Composable
+fun MiniPlayer(
+    state: NowPlaying,
+    onExpand: () -> Unit,
+    onPlayPause: () -> Unit,
+    onNext: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedVisibility(
+        visible = state.active,
+        enter = slideInVertically { it },
+        exit = slideOutVertically { it },
+        modifier = modifier,
+    ) {
+        Surface(tonalElevation = 3.dp) {
+            Column {
+                LinearProgressIndicator(
+                    progress = { state.progress },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onExpand)
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            state.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            state.subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    IconButton(onClick = onPlayPause) {
+                        Icon(
+                            if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (state.isPlaying) "Pause" else "Play",
+                        )
+                    }
+                    IconButton(onClick = onNext, enabled = state.hasNext) {
+                        Icon(Icons.Default.SkipNext, contentDescription = "Next")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun NowPlayingScreen(
+    state: NowPlaying,
+    track: TrackEntity?,
+    rating: Int,
+    playCount: Int,
+    crossfading: Boolean,
+    onCollapse: () -> Unit,
+    onPlayPause: () -> Unit,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit,
+    onSeek: (Float) -> Unit,
+    onRate: (Int) -> Unit,
+    onToggleLike: () -> Unit,
+) {
+    // While dragging, follow the finger rather than the player, or the thumb fights the ticker.
+    var scrubbing by remember { mutableStateOf<Float?>(null) }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onCollapse) {
+                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Close")
+            }
+            Spacer(Modifier.weight(1f))
+            if (crossfading) {
+                Text("Crossfading", style = MaterialTheme.typography.labelMedium)
+            }
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        Text(state.title, style = MaterialTheme.typography.headlineSmall, maxLines = 3)
+        Text(state.subtitle, style = MaterialTheme.typography.bodyMedium)
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            StarRating(rating = rating, onRate = onRate)
+            Spacer(Modifier.width(12.dp))
+            if (playCount > 0) {
+                Text(
+                    if (playCount == 1) "played once" else "played $playCount times",
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
+        }
+
+        Column {
+            Slider(
+                value = scrubbing ?: state.progress,
+                onValueChange = { scrubbing = it },
+                onValueChangeFinished = {
+                    scrubbing?.let(onSeek)
+                    scrubbing = null
+                },
+            )
+            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
+                Text(formatTime(state.positionMs), style = MaterialTheme.typography.labelSmall)
+                Text(formatTime(state.durationMs), style = MaterialTheme.typography.labelSmall)
+            }
+        }
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onToggleLike) {
+                Icon(
+                    if (rating >= 1) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
+                    contentDescription = if (rating >= 1) "Unlike" else "Like",
+                )
+            }
+            IconButton(onClick = onPrevious, enabled = state.hasPrevious) {
+                Icon(
+                    Icons.Default.SkipPrevious,
+                    contentDescription = "Previous",
+                    modifier = Modifier.size(36.dp),
+                )
+            }
+            IconButton(onClick = onPlayPause) {
+                Icon(
+                    if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (state.isPlaying) "Pause" else "Play",
+                    modifier = Modifier.size(48.dp),
+                )
+            }
+            IconButton(onClick = onNext, enabled = state.hasNext) {
+                Icon(
+                    Icons.Default.SkipNext,
+                    contentDescription = "Next",
+                    modifier = Modifier.size(36.dp),
+                )
+            }
+            Spacer(Modifier.size(48.dp))
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        TrackDetails(track = track, state = state)
+    }
+}
+
+/**
+ * What is actually known about the playing track.
+ *
+ * The audio carries no tags - WAV cannot hold them and the transcode adds none - so everything
+ * here is either derived from the generator's filename convention, recorded by Drive, reported by
+ * the decoder, or accumulated by the app. There is no instrument list in the files; the style
+ * words below are the closest the data comes.
+ */
+@Composable
+private fun TrackDetails(track: TrackEntity?, state: NowPlaying) {
+    if (track == null) return
+    var open by remember { mutableStateOf(false) }
+    val descriptors = remember(track.title) { TrackDescriptors.parse(track.title) }
+
+    HorizontalDivider()
+    TextButton(onClick = { open = !open }, modifier = Modifier.fillMaxWidth()) {
+        Text(if (open) "Hide details" else "Details")
+        Spacer(Modifier.width(6.dp))
+        Icon(
+            if (open) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+            contentDescription = null,
+        )
+    }
+    if (!open) return
+
+    if (descriptors.styles.isNotEmpty()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            descriptors.styles.forEach { style ->
+                AssistChip(onClick = {}, label = { Text(style.replaceFirstChar(Char::uppercase)) })
+            }
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        if (descriptors.phrase.isNotEmpty()) {
+            DetailRow("Description", descriptors.phrase.replaceFirstChar(Char::uppercase))
+        }
+        DetailRow("Category", track.category)
+        track.level?.let { DetailRow("Level", it) }
+        DetailRow("Duration", formatTime(state.durationMs))
+
+        val codec = listOfNotNull(
+            state.codec?.uppercase(),
+            state.bitrateBps?.let { "${it / 1000} kbps" },
+            state.sampleRateHz?.let { "${it / 1000} kHz" },
+            state.channels?.let { if (it == 2) "stereo" else if (it == 1) "mono" else "$it ch" },
+        )
+        if (codec.isNotEmpty()) DetailRow("Audio", codec.joinToString(" · "))
+
+        track.sizeBytes?.let { DetailRow("Size", formatSize(it)) }
+        track.addedAt?.let { DetailRow("Added", formatDate(it)) }
+        DetailRow("Plays", if (track.playCount == 0) "never" else track.playCount.toString())
+        track.lastPlayedAt?.let { DetailRow("Last played", formatDate(it)) }
+        if (track.rating > 0) DetailRow("Rating", "★".repeat(track.rating))
+        descriptors.fingerprint?.let { DetailRow("Fingerprint", it) }
+    }
+}
+
+@Composable
+private fun DetailRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
+        Text(label, style = MaterialTheme.typography.labelMedium)
+        Text(
+            value,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 16.dp),
+        )
+    }
+}
+
+private fun formatSize(bytes: Long): String = when {
+    bytes < 1024 -> "$bytes B"
+    bytes < 1024 * 1024 -> String.format(Locale.UK, "%.0f KB", bytes / 1024f)
+    else -> String.format(Locale.UK, "%.1f MB", bytes / 1024f / 1024f)
+}
+
+private fun formatDate(epochMs: Long): String =
+    SimpleDateFormat("d MMM yyyy", Locale.getDefault()).format(Date(epochMs))
+
+@Composable
+fun StarRating(rating: Int, onRate: (Int) -> Unit, modifier: Modifier = Modifier) {
+    Row(modifier) {
+        (1..5).forEach { star ->
+            IconButton(
+                // Tapping the current rating clears it, which is the usual way to un-rate.
+                onClick = { onRate(if (rating == star) 0 else star) },
+                modifier = Modifier.size(32.dp),
+            ) {
+                Icon(
+                    if (star <= rating) Icons.Default.Star else Icons.Outlined.StarBorder,
+                    contentDescription = "$star star",
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
+    }
+}
+
+private fun formatTime(ms: Long): String {
+    if (ms <= 0) return "0:00"
+    val totalSeconds = ms / 1000
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "$minutes:" + seconds.toString().padStart(2, '0')
+}
