@@ -26,7 +26,21 @@ data class WavInfo(
     val instruments: List<String> = emptyList(),
     /** ICMT */
     val comment: String? = null,
+    /**
+     * Playing time, computed from the header rather than read from a tag.
+     *
+     * WAV has no duration field: what it has is a byte rate and a count of sample bytes, and one
+     * divided by the other is exact for the uncompressed PCM this library is made of. Both live in
+     * the same few hundred bytes as the prompt, so this costs nothing on top of reading that.
+     */
+    val durationMs: Long? = null,
 ) {
+    /**
+     * Whether the generator wrote anything about the track.
+     *
+     * Deliberately about the prose fields only. [durationMs] comes from the format header, which
+     * every WAV has, so counting it would make this true for a file that says nothing at all.
+     */
     val hasAny: Boolean
         get() = prompt != null || genre != null || category != null || intensity != null ||
             software != null || instruments.isNotEmpty() || comment != null
@@ -45,29 +59,51 @@ data class WavInfo(
             if (head.size < 12) return null
             if (head.ascii(0) != "RIFF" || head.ascii(8) != "WAVE") return null
 
+            var info: WavInfo? = null
+            var byteRate = 0L
+            var sampleBytes: Long? = null
+
             var offset = 12
             while (offset + 8 <= head.size) {
                 val id = head.ascii(offset)
                 val size = head.leU32(offset + 4)
                 val body = offset + 8
 
-                if (id == "LIST" && body + 4 <= head.size && head.ascii(body) == "INFO") {
-                    val end = minOf(body + size, head.size.toLong()).toInt()
-                    return readInfo(head, body + 4, end)
+                when {
+                    // The byte rate sits 8 bytes into the fmt body and already folds in the
+                    // channel count, sample rate and bit depth, so it is the only field the
+                    // duration needs.
+                    id == "fmt " && body + 12 <= head.size -> byteRate = head.leU32(body + 8)
+
+                    id == "LIST" && body + 4 <= head.size && head.ascii(body) == "INFO" -> {
+                        val end = minOf(body + size, head.size.toLong()).toInt()
+                        info = readInfo(head, body + 4, end)
+                    }
                 }
-                // The generator writes INFO before the samples, so nothing past `data` is reachable
-                // and scanning on would only walk a multi-megabyte chunk we do not have.
-                if (id == "data") return null
+
+                // The samples are far past a 4 KB read, but the header declaring how many there
+                // are is not - and it is the last thing worth looking at, since the generator
+                // writes INFO before it and scanning on would only walk a chunk we do not have.
+                if (id == "data") {
+                    sampleBytes = size
+                    break
+                }
 
                 // Chunks pad to an even length. Getting this wrong desynchronises every chunk that
                 // follows - the classic RIFF bug.
                 val next = body + size + (size and 1L)
                 // Sizes are unsigned, so garbage past a truncation point can be enormous. Refusing
-                // to move forwards is what stops that becoming an infinite loop.
-                if (next <= offset || next > head.size) return null
+                // to move forwards is what stops that becoming an infinite loop. Whatever was read
+                // before that point still stands.
+                if (next <= offset || next > head.size) break
                 offset = next.toInt()
             }
-            return null
+
+            val durationMs = sampleBytes?.takeIf { byteRate > 0 }?.let { it * 1000 / byteRate }
+            // A file that yielded neither prose nor a duration is reported as having nothing,
+            // which is what tells the indexer there was no point in the read.
+            if (info == null && durationMs == null) return null
+            return (info ?: WavInfo()).copy(durationMs = durationMs)
         }
 
         private fun readInfo(head: ByteArray, start: Int, end: Int): WavInfo {

@@ -278,7 +278,7 @@ fun LibraryScreen(viewModel: LibraryViewModel = hiltViewModel()) {
                 OutlinedTextField(
                     value = state.view.query,
                     onValueChange = viewModel::setQuery,
-                    label = { Text("Search titles") },
+                    label = { Text("Search titles and prompts") },
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -290,9 +290,11 @@ fun LibraryScreen(viewModel: LibraryViewModel = hiltViewModel()) {
                 view = state.view,
                 categories = state.categories,
                 levels = state.levels,
+                genres = state.genres,
                 onStars = viewModel::setStars,
                 onCategory = viewModel::setCategory,
                 onLevel = viewModel::setLevel,
+                onGenre = viewModel::setGenre,
                 onOrder = viewModel::setOrder,
                 onClear = viewModel::clearFilters,
             )
@@ -458,8 +460,12 @@ private fun TrackRow(
         },
         supportingContent = {
             val level = track.level?.let { " / " + it }.orEmpty()
+            val meta = listOfNotNull(
+                track.category + level,
+                track.durationMs?.let(::formatDuration),
+            ).joinToString(" · ")
             Column {
-                Text(track.category + level, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(meta, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 StarRating(
                     rating = track.rating,
                     onRate = onRate,
@@ -737,9 +743,11 @@ private fun FilterBar(
     view: LibraryView,
     categories: List<String>,
     levels: List<String>,
+    genres: List<String>,
     onStars: (LibraryView.Stars) -> Unit,
     onCategory: (String?) -> Unit,
     onLevel: (String?) -> Unit,
+    onGenre: (String?) -> Unit,
     onOrder: (LibraryView.Order) -> Unit,
     onClear: () -> Unit,
 ) {
@@ -800,6 +808,26 @@ private fun FilterBar(
             }
         }
 
+        // Genre is read out of the WAV header rather than the folder tree, so it is empty until
+        // the headers have been indexed - and the chip stays out of the way until then.
+        if (genres.isNotEmpty() || view.genre != null) {
+            FilterDropdown(
+                label = view.genre ?: ALL_GENRES,
+                active = view.genre != null,
+            ) { dismiss ->
+                PickerItem(ALL_GENRES, selected = view.genre == null) {
+                    onGenre(null)
+                    dismiss()
+                }
+                genres.forEach { genre ->
+                    PickerItem(genre, selected = genre == view.genre) {
+                        onGenre(genre)
+                        dismiss()
+                    }
+                }
+            }
+        }
+
         FilterDropdown(
             label = view.order.label(),
             active = false,
@@ -832,6 +860,13 @@ private fun FilterBar(
 
 private const val ALL_CATEGORIES = "All categories"
 private const val ALL_LEVELS = "All intensities"
+private const val ALL_GENRES = "All genres"
+
+/** Runtime as m:ss, or nothing at all until the track's header has been read. */
+private fun formatDuration(ms: Long): String {
+    val totalSeconds = ms / 1000
+    return "${totalSeconds / 60}:" + (totalSeconds % 60).toString().padStart(2, '0')
+}
 
 /** A chip that opens its choices as a menu; three of these fit where three text fields would not. */
 @Composable

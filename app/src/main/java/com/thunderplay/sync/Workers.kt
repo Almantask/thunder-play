@@ -27,6 +27,7 @@ class RefreshWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
     private val refresher: LibraryRefresher,
+    private val indexer: MetadataIndexer,
     private val stats: FirestoreStats,
     private val playlists: PlaylistRepository,
     private val trackDao: TrackDao,
@@ -44,6 +45,12 @@ class RefreshWorker @AssistedInject constructor(
                 stats.pullPlayHistory(playDao)
                 playlists.pull()
             }
+
+            // Reading headers is the slowest part and the least urgent, so it goes last: a run
+            // that dies here still leaves the catalog and the stats updated, and the tracks it
+            // did not reach are simply still pending next time.
+            val indexed = indexer.index()
+            if (indexed.attempted > 0) Log.i(TAG, "Indexed $indexed")
 
             Log.i(TAG, "Refreshed $result")
             Result.success()

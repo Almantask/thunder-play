@@ -256,6 +256,15 @@ private class PlayTracker(
     private var lastResumeAt: Long = 0
     private var recorded = false
 
+    /**
+     * The length from the indexed WAV header, looked up once per track.
+     *
+     * The decoder is the authority, but it has no duration until it has parsed the stream, and a
+     * short cue skipped before that would fail the halfway rule for want of anything to halve.
+     * Fetched at the transition so the qualifying check can stay synchronous.
+     */
+    private var indexedDurationMs: Long? = null
+
     private val listener = object : Player.Listener {
         override fun onMediaItemTransition(
             mediaItem: androidx.media3.common.MediaItem?,
@@ -267,6 +276,9 @@ private class PlayTracker(
             accumulatedMs = 0
             recorded = false
             lastResumeAt = if (player.isPlaying) System.currentTimeMillis() else 0
+
+            indexedDurationMs = null
+            currentId?.let { id -> scope.launch { indexedDurationMs = trackDao.find(id)?.durationMs } }
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -300,7 +312,7 @@ private class PlayTracker(
     private fun maybeRecord(completed: Boolean = false) {
         if (recorded) return
         val id = currentId ?: return
-        val duration = player.duration.takeIf { it != C.TIME_UNSET }
+        val duration = player.duration.takeIf { it != C.TIME_UNSET } ?: indexedDurationMs
         if (!PlayQualifier.qualifies(accumulatedMs, duration)) return
 
         recorded = true

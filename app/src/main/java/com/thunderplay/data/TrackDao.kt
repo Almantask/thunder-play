@@ -22,6 +22,10 @@ interface TrackDao {
      *
      * A/B losers drop out; winners stay. The keeper is still a library track - it has simply moved
      * to a folder the refresher also walks - whereas an also-ran has been set aside on purpose.
+     *
+     * The search covers the prompt and the instrument list as well as the title. A title is a
+     * lowercased slug the generator truncates at 48 characters, so searching it alone cannot find
+     * "distant anvil" in a cue whose name stops before the words that matter.
      */
     @Query(
         """
@@ -30,18 +34,25 @@ interface TrackDao {
           AND (abVerdict IS NULL OR abVerdict = 'good')
           AND (:category IS NULL OR category = :category)
           AND (:level IS NULL OR level = :level)
+          AND (:genre IS NULL OR genre = :genre)
           AND (
             :minStars IS NULL
             OR (:minStars = 0 AND rating = 0)
             OR (:minStars > 0 AND rating >= :minStars)
           )
-          AND (:query = '' OR title LIKE '%' || :query || '%')
+          AND (
+            :query = ''
+            OR title LIKE '%' || :query || '%'
+            OR prompt LIKE '%' || :query || '%'
+            OR instruments LIKE '%' || :query || '%'
+          )
         ORDER BY title COLLATE NOCASE ASC
         """,
     )
     fun observeTracks(
         category: String?,
         level: String?,
+        genre: String?,
         minStars: Int?,
         query: String,
     ): Flow<List<TrackEntity>>
@@ -74,6 +85,78 @@ interface TrackDao {
         """,
     )
     fun observeLevels(): Flow<List<String>>
+
+    /** The genres the generator actually wrote, so the dropdown offers only real ones. */
+    @Query(
+        """
+        SELECT DISTINCT genre FROM tracks
+        WHERE trashedAt IS NULL AND genre IS NOT NULL
+          AND (abVerdict IS NULL OR abVerdict = 'good')
+        ORDER BY genre
+        """,
+    )
+    fun observeGenres(): Flow<List<String>>
+
+    /**
+     * Tracks whose header has never been read, or was read from different content.
+     *
+     * A file with no tags at all still gets metadataReadAt set, so it appears here once and then
+     * stops - otherwise every refresh would re-fetch the same silent headers for ever.
+     */
+    @Query(
+        """
+        SELECT * FROM tracks
+        WHERE trashedAt IS NULL
+          AND (metadataReadAt IS NULL OR metadataMd5 IS NOT md5Checksum)
+        ORDER BY title COLLATE NOCASE ASC
+        LIMIT :limit
+        """,
+    )
+    suspend fun needingMetadata(limit: Int): List<TrackEntity>
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM tracks
+        WHERE trashedAt IS NULL
+          AND (metadataReadAt IS NULL OR metadataMd5 IS NOT md5Checksum)
+        """,
+    )
+    fun observeMetadataPending(): Flow<Int>
+
+    /**
+     * Stores what the WAV header said.
+     *
+     * Every field is overwritten, including with null: a re-read after the file changed should
+     * leave the row describing the new content, not a blend of both. The two bookkeeping columns
+     * are always set, which is what stops a file with no tags being fetched again.
+     */
+    @Query(
+        """
+        UPDATE tracks SET
+            prompt = :prompt,
+            genre = :genre,
+            intensity = :intensity,
+            instruments = :instruments,
+            durationMs = :durationMs,
+            metadataReadAt = :readAt,
+            metadataMd5 = :md5Checksum
+        WHERE driveId = :driveId
+        """,
+    )
+    suspend fun applyMetadata(
+        driveId: String,
+        prompt: String?,
+        genre: String?,
+        intensity: String?,
+        instruments: String?,
+        durationMs: Long?,
+        readAt: Long,
+        md5Checksum: String?,
+    )
+
+    /** Everything with a prompt, which is what the insights are computed over. */
+    @Query("SELECT * FROM tracks WHERE prompt IS NOT NULL OR instruments IS NOT NULL")
+    fun observeDescribed(): Flow<List<TrackEntity>>
 
     /** Candidates for A/B judging: still live, and not yet judged. */
     @Query(

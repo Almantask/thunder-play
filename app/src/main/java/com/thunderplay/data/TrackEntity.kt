@@ -46,6 +46,39 @@ data class TrackEntity(
     /** Set when the track has been moved to the Drive trash folder. */
     val trashedAt: Long? = null,
 
+    // --- read out of the source WAV's RIFF header ---
+    /**
+     * INAM - what the track was generated from.
+     *
+     * The filename only carries a lowercased slug of this, truncated at 48 characters, so this is
+     * the only full copy outside the file itself. [abPrompt] is the same sentence captured at
+     * judging time; this one is filled in for the whole library, judged or not.
+     */
+    val prompt: String? = null,
+    /** IGNR - Instrumental, Ambience or Sound Effects. */
+    val genre: String? = null,
+    /** IART - the generator's own intensity, which is not always the folder it landed in. */
+    val intensity: String? = null,
+    /**
+     * IKEY, rejoined with "; ".
+     *
+     * Stored as the delimited string the generator wrote rather than a converted list: SQL can
+     * then LIKE across it, which is what makes an instrument searchable at all.
+     */
+    val instruments: String? = null,
+    /** Playing time computed from the WAV header. */
+    val durationMs: Long? = null,
+
+    /** When the header was last read, so a file with no tags is not re-fetched for ever. */
+    val metadataReadAt: Long? = null,
+    /**
+     * The checksum the header was read from.
+     *
+     * Compared against [md5Checksum] to decide whether a re-read is due: a regenerated take keeps
+     * its Drive id but changes its content, and its prompt changes with it.
+     */
+    val metadataMd5: String? = null,
+
     // --- A/B judging ---
     /**
      * "good" or "bad" once this cue's takes have been judged; null while it is still a candidate.
@@ -61,4 +94,12 @@ data class TrackEntity(
     val abPrompt: String? = null,
 ) {
     val isLiked: Boolean get() = rating >= 1
+
+    /**
+     * [instruments] split back into the list the generator wrote.
+     *
+     * A computed property, so Room stores the delimited string and every reader sees the parts.
+     */
+    val instrumentList: List<String>
+        get() = instruments?.split(';')?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
 }

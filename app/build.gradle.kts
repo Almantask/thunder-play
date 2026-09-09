@@ -56,6 +56,9 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
+        // android.util.Log is not implemented in the unit-test JAR and throws when called. Every
+        // service worth testing logs, so without this a log line inside one fails its tests.
+        unitTests.isReturnDefaultValues = true
     }
 }
 

@@ -212,16 +212,18 @@ fun NowPlayingScreen(
 /**
  * What is actually known about the playing track.
  *
- * The audio carries no tags - WAV cannot hold them and the transcode adds none - so everything
- * here is either derived from the generator's filename convention, recorded by Drive, reported by
- * the decoder, or accumulated by the app. There is no instrument list in the files; the style
- * words below are the closest the data comes.
+ * Three sources, in descending order of authority: the generator's own RIFF tags, read out of the
+ * source WAV once the header has been indexed; the filename convention, which is all there was
+ * before that and all there is for a track not yet read; and what Drive, the decoder and the app
+ * itself have recorded. The prompt is the one field that exists nowhere else - the filename only
+ * carries a truncated slug of it.
  */
 @Composable
 private fun TrackDetails(track: TrackEntity?, state: NowPlaying) {
     if (track == null) return
     var open by remember { mutableStateOf(false) }
     val descriptors = remember(track.title) { TrackDescriptors.parse(track.title) }
+    val instruments = remember(track.instruments) { track.instrumentList }
 
     HorizontalDivider()
     TextButton(onClick = { open = !open }, modifier = Modifier.fillMaxWidth()) {
@@ -234,26 +236,35 @@ private fun TrackDetails(track: TrackEntity?, state: NowPlaying) {
     }
     if (!open) return
 
-    if (descriptors.styles.isNotEmpty()) {
+    // The instruments the generator actually listed, falling back to the style words guessed out
+    // of the filename for a track whose header has not been read yet.
+    val chips = instruments.ifEmpty { descriptors.styles }
+    if (chips.isNotEmpty()) {
         Row(
             Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            descriptors.styles.forEach { style ->
-                AssistChip(onClick = {}, label = { Text(style.replaceFirstChar(Char::uppercase)) })
+            chips.forEach { chip ->
+                AssistChip(onClick = {}, label = { Text(chip.replaceFirstChar(Char::uppercase)) })
             }
         }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        if (descriptors.phrase.isNotEmpty()) {
+        track.prompt?.let { DetailRow("Prompt", it, lines = 6) }
+        if (track.prompt == null && descriptors.phrase.isNotEmpty()) {
             DetailRow("Description", descriptors.phrase.replaceFirstChar(Char::uppercase))
         }
+        track.genre?.let { DetailRow("Genre", it) }
         DetailRow("Category", track.category)
         track.level?.let { DetailRow("Level", it) }
-        DetailRow("Duration", formatTime(state.durationMs))
+        // The generator's own intensity, which is not always the folder the file landed in.
+        track.intensity?.takeIf { it != track.level }?.let { DetailRow("Intensity", it) }
+        // The decoder's figure is authoritative once it has one; the indexed header covers the
+        // gap before the stream has been parsed.
+        DetailRow("Duration", formatTime(state.durationMs.takeIf { it > 0 } ?: track.durationMs ?: 0))
 
         val codec = listOfNotNull(
             state.codec?.uppercase(),
@@ -273,13 +284,13 @@ private fun TrackDetails(track: TrackEntity?, state: NowPlaying) {
 }
 
 @Composable
-private fun DetailRow(label: String, value: String) {
+private fun DetailRow(label: String, value: String, lines: Int = 2) {
     Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
         Text(label, style = MaterialTheme.typography.labelMedium)
         Text(
             value,
             style = MaterialTheme.typography.bodySmall,
-            maxLines = 2,
+            maxLines = lines,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(start = 16.dp),
         )

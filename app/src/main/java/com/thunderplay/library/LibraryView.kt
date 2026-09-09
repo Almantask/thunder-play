@@ -6,9 +6,10 @@ import kotlin.random.Random
 /**
  * What the library list is currently showing.
  *
- * The three filters are independent and combine with AND, so "Beast Hunt, level III, three stars
+ * The four filters are independent and combine with AND, so "Beast Hunt, level III, three stars
  * or better" is a single state rather than a mode you have to switch between. Each one has a
- * neutral value - [Stars.Any], and null for the two folder filters - meaning "no restriction".
+ * neutral value - [Stars.Any], and null for the three folder and tag filters - meaning "no
+ * restriction".
  */
 data class LibraryView(
     val stars: Stars = Stars.Any,
@@ -16,6 +17,13 @@ data class LibraryView(
     val category: String? = null,
     /** Intensity level (the folder inside the category) to restrict to; null means every level. */
     val level: String? = null,
+    /**
+     * Generator genre to restrict to; null means every genre.
+     *
+     * Unlike category and level this does not come from the folder tree - it is read out of the
+     * WAV header, so it can separate music from sound effects that sit in the same folder.
+     */
+    val genre: String? = null,
     val order: Order = Order.Name,
     val query: String = "",
     /** Fixed for the life of a shuffle so the list does not reorder as you scroll. */
@@ -42,9 +50,9 @@ data class LibraryView(
 
     /** True when the dropdowns are hiding part of the library, which is what Clear undoes. */
     val isFiltered: Boolean
-        get() = stars != Stars.Any || category != null || level != null
+        get() = stars != Stars.Any || category != null || level != null || genre != null
 
-    fun cleared() = copy(stars = Stars.Any, category = null, level = null)
+    fun cleared() = copy(stars = Stars.Any, category = null, level = null, genre = null)
 
     fun reshuffled(seed: Long = Random.nextLong()) = copy(order = Order.Random, shuffleSeed = seed)
 }

@@ -19,7 +19,9 @@ import com.thunderplay.playlist.ShareLink
 import com.thunderplay.playlist.ShareService
 import com.thunderplay.playlist.TrackExporter
 import com.thunderplay.stats.StatsGateway
+import com.thunderplay.sync.IndexProgress
 import com.thunderplay.sync.LibraryRefresher
+import com.thunderplay.sync.MetadataIndexer
 import com.thunderplay.sync.RefreshProgress
 import com.thunderplay.sync.RefreshResult
 import com.thunderplay.sync.TrashService
@@ -45,9 +47,14 @@ sealed interface RefreshState {
         val tracksFound: Int = 0,
         val foldersScanned: Int = 0,
         val linking: Boolean = false,
+        /** Set while WAV headers are being read, which happens after the walk has finished. */
+        val reading: Reading? = null,
     ) : RefreshState {
+        data class Reading(val done: Int, val total: Int)
+
         val label: String
             get() = when {
+                reading != null -> "Reading details ${reading.done} of ${reading.total}..."
                 linking -> "Matching source files..."
                 tracksFound == 0 -> "Scanning Drive..."
                 else -> "Found $tracksFound track(s) in $foldersScanned folder(s)..."
@@ -70,6 +77,7 @@ data class LibraryUiState(
     val tracks: List<TrackEntity> = emptyList(),
     val categories: List<String> = emptyList(),
     val levels: List<String> = emptyList(),
+    val genres: List<String> = emptyList(),
     val playlists: List<PlaylistEntity> = emptyList(),
     val localStates: Map<String, LocalState> = emptyMap(),
     val refresh: RefreshState = RefreshState.Idle,
@@ -107,6 +115,7 @@ data class LibraryUiState(
 class LibraryViewModel @Inject constructor(
     private val trackDao: TrackDao,
     private val refresher: LibraryRefresher,
+    private val indexer: MetadataIndexer,
     private val auth: ServiceAccountAuth,
     private val downloads: DownloadsRepository,
     private val stats: StatsGateway,
@@ -131,26 +140,39 @@ class LibraryViewModel @Inject constructor(
         trackDao.observeTracks(
             category = v.category,
             level = v.level,
+            genre = v.genre,
             minStars = v.stars.minimum,
             query = v.query.trim(),
         )
     }
 
+    /** The values the dropdowns offer, folded together so the main combine stays within five. */
+    private val facets = combine(
+        trackDao.observeCategories(),
+        trackDao.observeLevels(),
+        trackDao.observeGenres(),
+        ::Facets,
+    )
+
+    private data class Facets(
+        val categories: List<String>,
+        val levels: List<String>,
+        val genres: List<String>,
+    )
+
     private val listState = combine(
         view,
         filtered,
-        trackDao.observeCategories(),
-        trackDao.observeLevels(),
+        facets,
         trackDao.observeAll(),
-    ) { v, t, categories, levels, all ->
-        ListSnapshot(v, t.ordered(v), categories, levels, all.size)
+    ) { v, t, f, all ->
+        ListSnapshot(v, t.ordered(v), f, all.size)
     }
 
     private data class ListSnapshot(
         val view: LibraryView,
         val tracks: List<TrackEntity>,
-        val categories: List<String>,
-        val levels: List<String>,
+        val facets: Facets,
         val libraryTotal: Int,
     )
 
@@ -169,8 +191,9 @@ class LibraryViewModel @Inject constructor(
         LibraryUiState(
             view = snapshot.view,
             tracks = snapshot.tracks,
-            categories = snapshot.categories,
-            levels = snapshot.levels,
+            categories = snapshot.facets.categories,
+            levels = snapshot.facets.levels,
+            genres = snapshot.facets.genres,
             playlists = playlists,
             localStates = localStates,
             refresh = refresh,
@@ -192,6 +215,8 @@ class LibraryViewModel @Inject constructor(
     fun setCategory(category: String?) = update { it.copy(category = category) }
 
     fun setLevel(level: String?) = update { it.copy(level = level) }
+
+    fun setGenre(genre: String?) = update { it.copy(genre = genre) }
 
     /** Resets the three dropdowns. The search text is left alone; it is visibly its own control. */
     fun clearFilters() = update { it.cleared() }
@@ -424,23 +449,39 @@ class LibraryViewModel @Inject constructor(
         refreshState.value = RefreshState.Running()
         viewModelScope.launch {
             runCatching {
+                var walk = RefreshResult(0, 0, 0, 0)
+
                 // Each batch is already in the database by the time it is reported, so the list
                 // grows underneath this while the count ticks up.
                 refresher.refreshProgressively().collect { progress ->
-                    refreshState.value = when (progress) {
-                        is RefreshProgress.Scanning -> RefreshState.Running(
+                    when (progress) {
+                        is RefreshProgress.Scanning -> refreshState.value = RefreshState.Running(
                             tracksFound = progress.tracksFound,
                             foldersScanned = progress.foldersScanned,
                         )
 
-                        is RefreshProgress.Linking -> RefreshState.Running(
+                        is RefreshProgress.Linking -> refreshState.value = RefreshState.Running(
                             tracksFound = progress.tracksFound,
                             linking = true,
                         )
 
-                        is RefreshProgress.Complete -> RefreshState.Done(progress.result)
+                        is RefreshProgress.Complete -> walk = progress.result
                     }
                 }
+
+                // Headers are read only after the catalog is on screen. A track with no prompt yet
+                // is perfectly playable, so making the list wait on a few hundred range requests
+                // would trade the thing the user asked for against one they did not.
+                indexer.indexProgressively().collect { progress ->
+                    if (progress is IndexProgress.Reading) {
+                        refreshState.value = RefreshState.Running(
+                            tracksFound = walk.tracks,
+                            reading = RefreshState.Running.Reading(progress.done, progress.total),
+                        )
+                    }
+                }
+
+                refreshState.value = RefreshState.Done(walk)
             }.onFailure { cause ->
                 diagnostics.error("Refresh", "Library refresh failed", cause)
                 refreshState.value = RefreshState.Failed(readable(cause))
