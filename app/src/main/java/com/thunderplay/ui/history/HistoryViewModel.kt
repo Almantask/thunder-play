@@ -4,12 +4,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.thunderplay.data.PlayDao
 import com.thunderplay.data.TrackDao
+import com.thunderplay.library.Insights
+import com.thunderplay.library.PromptInsights
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import java.util.concurrent.TimeUnit
@@ -58,6 +61,20 @@ class HistoryViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val window = MutableStateFlow(HistoryWindow.Month)
+
+    /**
+     * Prompt insights are not windowed.
+     *
+     * They are about what a word is worth, not about what was listened to lately, and a rating
+     * given six months ago says exactly as much as one given this morning.
+     */
+    val insights: StateFlow<Insights> = trackDao.observeDescribed()
+        .map { PromptInsights.summarise(it) }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            Insights(0, 0, null, emptyList()),
+        )
 
     private val data = window.flatMapLatest { selected ->
         val since = selected.spanMs?.let { System.currentTimeMillis() - it } ?: 0L

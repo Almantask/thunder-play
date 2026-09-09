@@ -154,8 +154,19 @@ interface TrackDao {
         md5Checksum: String?,
     )
 
-    /** Everything with a prompt, which is what the insights are computed over. */
-    @Query("SELECT * FROM tracks WHERE prompt IS NOT NULL OR instruments IS NOT NULL")
+    /**
+     * Everything the insights are computed over.
+     *
+     * A/B losers are deliberately included: their verdict is the most explicit signal there is
+     * about a prompt. Trashed tracks are not - removing one is a decision about the file rather
+     * than a judgement of the words that made it.
+     */
+    @Query(
+        """
+        SELECT * FROM tracks
+        WHERE trashedAt IS NULL AND (prompt IS NOT NULL OR instruments IS NOT NULL)
+        """,
+    )
     fun observeDescribed(): Flow<List<TrackEntity>>
 
     /** Candidates for A/B judging: still live, and not yet judged. */

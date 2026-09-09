@@ -16,9 +16,17 @@ intensity, instruments and comment out of a WAV's RIFF header, but its only call
 stores it and nothing searches it, so the app knows less about a track than the file does. Most of
 tier 1 follows from that.
 
-## Tier 1 — highest value
+## Tier 1 — done
+
+Built on 2026-09-09. Each item below keeps its original description, with a note on what actually
+landed; anything the implementation decided differently is called out there.
 
 ### 1. Index the WAV INFO metadata for the whole library
+
+**Done.** `MetadataIndexer` reads six headers at a time and stores prompt, genre, intensity and
+instruments; a track is only re-read when its checksum changes, and a failed read stays pending
+rather than being recorded as an empty one. Runs after the walk in both the worker and a manual
+refresh.
 
 A refresh pass that range-reads 4 KB per track — `DriveRepository.readHead` already does exactly
 this — and persists prompt, genre, intensity and instruments onto `TrackEntity`. Keyed on
@@ -31,6 +39,11 @@ style words.
 
 ### 2. Prompt insights — which prompts earn stars
 
+**Done.** `PromptInsights`, shown under a Prompts tab on the History screen. Unrated tracks are
+not counted as zero - that would drag every common word down in proportion to how much of the
+library is still unheard - and a term needs three rated tracks before it is ranked. A/B verdicts
+are tallied per term alongside the averages. Exporting prompts back to the PC is still to do.
+
 Ratings, play counts and A/B verdicts already exist. Crossed against prompt words and instruments
 they answer a question nothing else can: *"tribal" plus "percussive" averages 4.1 stars, "ambient
 drone" averages 1.8.* That turns the app from a player into a feedback loop for the generator, and
@@ -38,6 +51,10 @@ it is only possible because the generator's metadata and the judgements live in 
 Depends on #1. Pairs naturally with exporting "prompts worth re-running" back to the PC.
 
 ### 3. Store track duration
+
+**Done.** Computed from the header's byte rate and sample-chunk size, shown in the library rows,
+and used as the fallback length for the play-qualifying rule when the decoder has not parsed the
+stream yet.
 
 `TrackEntity` has no duration field. `TrackDescriptors.encodedDurationMs` recovers one from the
 filename, and the WAV header fetched for #1 carries the authoritative figure for free (data chunk
@@ -50,6 +67,9 @@ never qualify as a play.
 
 ### 4. Repeat and shuffle as playback modes
 
+**Done.** Repeat-one fades a track into itself, so a bed loops with no seam. Shuffle reorders the
+queue in place rather than keeping a hidden permutation, since the queue is now visible.
+
 [`CrossfadePlayer`](app/src/main/java/com/thunderplay/playback/CrossfadePlayer.kt) stubs
 `handleSetRepeatMode` and `handleSetShuffleModeEnabled` to no-ops. For a library of game ambience
 "loop this bed" is table stakes, and looping *through the existing crossfade* gives seamless
@@ -57,6 +77,9 @@ infinite ambience, which is what much of this library is for. Repeat-one carries
 shuffle mode is secondary, since the seeded shuffle already covers browsing.
 
 ### 5. Queue UI — up next, reorder, play next
+
+**Done.** An Up next sheet on Now Playing, with move up/down and remove per row, plus Play next
+and Add to queue in the library. Reordering is by menu rather than by dragging.
 
 `LibraryViewModel.play(index)` hands the whole filtered view to the player and there is no way to
 see or change it afterwards. A queue sheet on Now Playing with drag-reorder, plus "play next" in
@@ -143,10 +166,9 @@ conversation — the A/B tab, aimed at the people the cues are actually for. Nee
 - **A permanent public portfolio page** — contradicts the everything-expires design of shares. That
   is a decision to make, not a feature to add.
 
-## If only three
+## What is next
 
-**#1, then #3, then #2.** They are one chain: the same 4 KB range read feeds all three, #3 also
-closes the play-qualification gap, and #2 is the thing that makes this worth having built rather
-than installing an existing player.
-
-**#4** is the better pick for a single evening.
+Tier 1 is built, so the top of the list is now tier 2. **#6 saved views** is the cheapest thing
+left with daily value, and **#7 fast triage** is what turns the indexed prompts into a rated
+library quickly - which is also what makes #2's averages mean anything, since a term needs three
+rated tracks before it is ranked.

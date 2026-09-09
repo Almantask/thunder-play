@@ -17,13 +17,24 @@ and the app does not need it.
   through Drive on any device) and it appears in the app. Refresh and download are separate
   toggles in Settings, each with its own interval.
 - **Plays with the screen off**, with prev / play / next and a Like button on the lock screen.
-- **Crossfades** between tracks on an equal-power curve, configurable from 0–12 seconds.
+- **Crossfades** between tracks on an equal-power curve, configurable from 0–12 seconds. Repeat,
+  shuffle and an editable *Up next* queue sit on the Now Playing screen; repeat-one fades a track
+  into itself, so an ambience bed loops with no seam.
 - **Rates tracks 1–5 stars**; "liked" is simply a rating of 1 or more, so the lock-screen heart
   and the star control are the same underlying value.
+- **Reads the generator's own metadata.** The prompt, genre, intensity and instrument list live in
+  each source WAV's RIFF header, and a 4 KB range request per track is enough to read them — so
+  search covers prompts and instruments rather than only the truncated slug in the filename, tracks
+  can be filtered by genre, and Now Playing shows the sentence the track was generated from.
+  Durations come from the same header.
+- **Says which prompts earn stars.** History's *Prompts* tab averages your ratings across the words
+  and instruments behind them, so "tribal percussive" beating "ambient drone" is a fact rather than
+  a hunch. Unrated tracks are not counted as zero, and a term needs three rated tracks to be ranked.
 - **Records every play**, not just a counter, so History can show most-played and listening time
   over a window.
-- **Filters** by category and by liked — combinable, so "Beast Hunt, liked only" works — and
-  **orders** by name, most played, highest rated, recently added, or a stable random shuffle.
+- **Filters** by stars, category, intensity and genre — independent and combinable, so "Beast Hunt,
+  level III, four stars or better" is one state rather than a mode — and **orders** by name, most
+  played, highest rated, recently added, or a stable random shuffle.
 - **Shares** a single track as a file through the Android share sheet, or any playlist *or
   filtered view* as a link that streams in any browser. Every link expires after 7 days.
 - **Deletes safely.** Removing a track from Drive moves it — and its source WAV — into
