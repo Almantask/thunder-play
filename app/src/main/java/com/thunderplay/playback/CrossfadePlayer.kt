@@ -57,6 +57,18 @@ class CrossfadePlayer(
     private var wantsToPlay: Boolean = false
     private var released = false
 
+    private var repeatMode: Int = Player.REPEAT_MODE_OFF
+    private var shuffleEnabled: Boolean = false
+
+    /**
+     * The order the queue was in before it was shuffled, so switching shuffle off can restore it.
+     *
+     * Shuffling reorders the queue itself rather than keeping a separate permutation. The queue is
+     * visible - it is what the Up next list shows - so a hidden order would mean the list and the
+     * playback order disagreed about what comes next.
+     */
+    private var unshuffled: List<MediaItem> = emptyList()
+
     private var fading = false
     private val _crossfading = MutableStateFlow(false)
     val crossfading: StateFlow<Boolean> = _crossfading.asStateFlow()
@@ -127,6 +139,8 @@ class CrossfadePlayer(
         return builder
             .setPlaylist(items)
             .setCurrentMediaItemIndex(currentIndex)
+            .setRepeatMode(repeatMode)
+            .setShuffleModeEnabled(shuffleEnabled)
             .setPlaybackState(active.playbackState)
             .setPlayWhenReady(wantsToPlay, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
             .setContentPositionMs(PositionSupplier { active.currentPosition.coerceAtLeast(0) })
@@ -145,8 +159,82 @@ class CrossfadePlayer(
     ): ListenableFuture<*> {
         cancelFade()
         queue = mediaItems.toList()
+        unshuffled = queue
         currentIndex = if (startIndex == C.INDEX_UNSET) 0 else startIndex.coerceIn(0, maxOf(0, queue.size - 1))
+        // A new queue arriving while shuffle is on is shuffled too, or turning it on once would
+        // only ever apply to the list that happened to be loaded at the time.
+        if (shuffleEnabled) shuffleQueue()
         loadActive(atMs = if (startPositionMs == C.TIME_UNSET) 0 else startPositionMs)
+        return Futures.immediateVoidFuture()
+    }
+
+    override fun handleAddMediaItems(
+        index: Int,
+        mediaItems: MutableList<MediaItem>,
+    ): ListenableFuture<*> {
+        // Any structural change can invalidate what the standby player is part-way through
+        // fading in, so the blend is abandoned rather than left pointing at a stale position.
+        cancelFade()
+        val at = index.coerceIn(0, queue.size)
+        queue = queue.toMutableList().apply { addAll(at, mediaItems) }
+        unshuffled = unshuffled + mediaItems
+        currentIndex = QueuePlan.indexAfterAdd(currentIndex, at, mediaItems.size)
+        invalidateState()
+        return Futures.immediateVoidFuture()
+    }
+
+    override fun handleMoveMediaItems(
+        fromIndex: Int,
+        toIndex: Int,
+        newIndex: Int,
+    ): ListenableFuture<*> {
+        cancelFade()
+        val playing = queue.getOrNull(currentIndex)
+        val from = fromIndex.coerceIn(0, queue.size)
+        val to = toIndex.coerceIn(from, queue.size)
+        if (from == to) return Futures.immediateVoidFuture()
+
+        val moving = queue.subList(from, to).toList()
+        val rest = queue.toMutableList().apply { subList(from, to).clear() }
+        rest.addAll(newIndex.coerceIn(0, rest.size), moving)
+        queue = rest
+
+        // The index follows the playing item rather than the other way round: reordering the list
+        // underneath a track must not change which track is audible.
+        if (playing != null) {
+            currentIndex = queue.indexOfFirst { it === playing }.takeIf { it >= 0 } ?: currentIndex
+        }
+        invalidateState()
+        return Futures.immediateVoidFuture()
+    }
+
+    override fun handleRemoveMediaItems(fromIndex: Int, toIndex: Int): ListenableFuture<*> {
+        cancelFade()
+        val from = fromIndex.coerceIn(0, queue.size)
+        val to = toIndex.coerceIn(from, queue.size)
+        if (from == to) return Futures.immediateVoidFuture()
+
+        val dropped = queue.subList(from, to).toSet()
+        val outcome = QueuePlan.afterRemoval(currentIndex, from, to, queue.size)
+        queue = queue.toMutableList().apply { subList(from, to).clear() }
+        unshuffled = unshuffled.filterNot { it in dropped }
+
+        when (outcome) {
+            QueuePlan.Removal.Emptied -> {
+                currentIndex = 0
+                wantsToPlay = false
+                active.stop()
+                active.clearMediaItems()
+            }
+
+            is QueuePlan.Removal.Reload -> {
+                currentIndex = outcome.index
+                loadActive(atMs = 0)
+            }
+
+            is QueuePlan.Removal.Keep -> currentIndex = outcome.index
+        }
+        invalidateState()
         return Futures.immediateVoidFuture()
     }
 
@@ -182,7 +270,7 @@ class CrossfadePlayer(
         val fade = CrossfadeCurve.manualSkipMs(crossfadeMs)
         if (fade > 0 && target == currentIndex + 1 && !fading) {
             // Skipping forward one track still blends, just briefly, so Next feels responsive.
-            beginFade(fade)
+            beginFade(fade, target)
         } else {
             cancelFade()
             currentIndex = target
@@ -207,11 +295,47 @@ class CrossfadePlayer(
         return Futures.immediateVoidFuture()
     }
 
-    override fun handleSetRepeatMode(repeatMode: Int): ListenableFuture<*> =
-        Futures.immediateVoidFuture()
+    override fun handleSetRepeatMode(repeatMode: Int): ListenableFuture<*> {
+        this.repeatMode = repeatMode
+        invalidateState()
+        return Futures.immediateVoidFuture()
+    }
 
-    override fun handleSetShuffleModeEnabled(shuffleModeEnabled: Boolean): ListenableFuture<*> =
-        Futures.immediateVoidFuture()
+    /**
+     * Shuffling reorders the queue in place, keeping the playing track where it is.
+     *
+     * Switching it off restores the order the queue arrived in, minus anything since removed;
+     * tracks added while shuffled keep the position they were added at.
+     */
+    override fun handleSetShuffleModeEnabled(shuffleModeEnabled: Boolean): ListenableFuture<*> {
+        if (shuffleModeEnabled == shuffleEnabled) return Futures.immediateVoidFuture()
+        shuffleEnabled = shuffleModeEnabled
+
+        val playing = queue.getOrNull(currentIndex)
+        if (shuffleModeEnabled) {
+            shuffleQueue()
+        } else if (unshuffled.isNotEmpty()) {
+            val restored = unshuffled.filter { item -> queue.any { it === item } }
+            val newcomers = queue.filterNot { item -> restored.any { it === item } }
+            queue = restored + newcomers
+            if (playing != null) {
+                currentIndex = queue.indexOfFirst { it === playing }.takeIf { it >= 0 } ?: 0
+            }
+        }
+        invalidateState()
+        return Futures.immediateVoidFuture()
+    }
+
+    /** Leaves the playing track at its current position and shuffles everything around it. */
+    private fun shuffleQueue() {
+        if (queue.size < 2) return
+        val playing = queue.getOrNull(currentIndex)
+        val rest = queue.filterNot { it === playing }.shuffled()
+        queue = listOfNotNull(playing) + rest
+        currentIndex = if (playing == null) 0 else 0
+    }
+
+    private fun autoNextIndex(): Int? = QueuePlan.autoNext(currentIndex, queue.size, repeatMode)
 
     // ---------------------------------------------------------------- fading
 
@@ -220,13 +344,16 @@ class CrossfadePlayer(
 
         if (!fading) {
             if (!active.isPlaying) return
+            val next = autoNextIndex()
             val shouldFade = CrossfadeCurve.shouldStart(
                 positionMs = active.currentPosition,
                 durationMs = active.duration.takeIf { it != C.TIME_UNSET } ?: -1L,
                 crossfadeMs = crossfadeMs,
-                hasNext = currentIndex + 1 < queue.size,
+                hasNext = next != null,
             )
-            if (shouldFade) beginFade(crossfadeMs)
+            // Repeat-one fades the track into itself, which is what makes an ambience bed loop
+            // without a seam.
+            if (shouldFade && next != null) beginFade(crossfadeMs, next)
             return
         }
 
@@ -240,16 +367,19 @@ class CrossfadePlayer(
     private var fadeEndsAtMs = 0L
     private var fadeDurationMs = 0
 
-    private fun beginFade(durationMs: Int) {
-        val nextIndex = currentIndex + 1
-        if (nextIndex >= queue.size) return
+    /** Where the fade in progress is heading. Captured at the start, since the queue can move. */
+    private var fadeTargetIndex = 0
 
-        standby.setMediaItem(queue[nextIndex])
+    private fun beginFade(durationMs: Int, targetIndex: Int) {
+        val target = queue.getOrNull(targetIndex) ?: return
+
+        standby.setMediaItem(target)
         standby.prepare()
         standby.volume = 0f
         standby.playWhenReady = wantsToPlay
 
         fading = true
+        fadeTargetIndex = targetIndex
         _crossfading.value = true
         fadeDurationMs = durationMs.coerceAtLeast(1)
         fadeEndsAtMs = System.currentTimeMillis() + fadeDurationMs
@@ -257,7 +387,7 @@ class CrossfadePlayer(
 
     private fun completeFade() {
         swapPlayers()
-        currentIndex = (currentIndex + 1).coerceAtMost(queue.size - 1)
+        currentIndex = fadeTargetIndex.coerceIn(0, maxOf(0, queue.size - 1))
         fading = false
         _crossfading.value = false
         invalidateState()
@@ -291,14 +421,15 @@ class CrossfadePlayer(
 
     /** Hard transition, used when no duration was available to schedule a fade against. */
     private fun advance(fadeMs: Int) {
-        if (currentIndex + 1 >= queue.size) {
+        val next = autoNextIndex()
+        if (next == null) {
             wantsToPlay = false
             return
         }
         if (fadeMs > 0) {
-            beginFade(fadeMs)
+            beginFade(fadeMs, next)
         } else {
-            currentIndex += 1
+            currentIndex = next
             loadActive(atMs = 0)
         }
     }
@@ -329,6 +460,8 @@ class CrossfadePlayer(
                 Player.COMMAND_SEEK_TO_MEDIA_ITEM,
                 Player.COMMAND_SET_MEDIA_ITEM,
                 Player.COMMAND_CHANGE_MEDIA_ITEMS,
+                Player.COMMAND_SET_REPEAT_MODE,
+                Player.COMMAND_SET_SHUFFLE_MODE,
                 Player.COMMAND_GET_CURRENT_MEDIA_ITEM,
                 Player.COMMAND_GET_TIMELINE,
                 Player.COMMAND_GET_TRACKS,

@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Checklist
@@ -89,6 +90,7 @@ import com.thunderplay.ui.playlists.NameDialog
 fun LibraryScreen(viewModel: LibraryViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val nowPlaying by viewModel.player.nowPlaying.collectAsStateWithLifecycle()
+    val queue by viewModel.player.queue.collectAsStateWithLifecycle()
     val snackbars = remember { SnackbarHostState() }
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
@@ -146,12 +148,18 @@ fun LibraryScreen(viewModel: LibraryViewModel = hiltViewModel()) {
             rating = current?.rating ?: 0,
             playCount = current?.playCount ?: 0,
             crossfading = nowPlaying.crossfading,
+            queue = queue,
             onCollapse = { expanded = false },
             onPlayPause = viewModel.player::togglePlayPause,
             onNext = { viewModel.player.next() },
             onPrevious = viewModel.player::previous,
             onSeek = viewModel.player::seekTo,
             onRate = { rating -> nowPlaying.mediaId?.let { viewModel.setRating(it, rating) } },
+            onCycleRepeat = viewModel.player::cycleRepeat,
+            onToggleShuffle = viewModel.player::toggleShuffle,
+            onPlayQueueIndex = viewModel.player::playQueueIndex,
+            onMoveInQueue = viewModel.player::moveInQueue,
+            onRemoveFromQueue = viewModel.player::removeFromQueue,
         )
         return
     }
@@ -220,6 +228,7 @@ fun LibraryScreen(viewModel: LibraryViewModel = hiltViewModel()) {
                     onRemove = viewModel::removeSelectedDownloads,
                     onAddToPlaylist = viewModel::addSelectionToPlaylist,
                     onNewPlaylist = { namingSelectionPlaylist = true },
+                    onQueueSelection = viewModel::queueSelection,
                     onShare = { namingSelectionShare = true },
                 )
                 return@Scaffold
@@ -353,6 +362,8 @@ fun LibraryScreen(viewModel: LibraryViewModel = hiltViewModel()) {
                         onShare = viewModel::shareTrack,
                         onTrash = viewModel::moveToTrash,
                         onAddToPlaylist = viewModel::addToPlaylist,
+                        onPlayNext = viewModel::playNext,
+                        onAddToQueue = viewModel::addToQueue,
                     )
                 }
             }
@@ -382,6 +393,8 @@ private fun TrackList(
     onShare: (TrackEntity) -> Unit,
     onTrash: (TrackEntity) -> Unit,
     onAddToPlaylist: (String, String) -> Unit,
+    onPlayNext: (TrackEntity) -> Unit,
+    onAddToQueue: (TrackEntity) -> Unit,
 ) {
     val listState = rememberLazyListState()
     LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
@@ -401,6 +414,8 @@ private fun TrackList(
                 onShare = { onShare(track) },
                 onTrash = { onTrash(track) },
                 onAddToPlaylist = { onAddToPlaylist(it, track.driveId) },
+                onPlayNext = { onPlayNext(track) },
+                onAddToQueue = { onAddToQueue(track) },
             )
         }
     }
@@ -423,6 +438,8 @@ private fun TrackRow(
     onShare: () -> Unit,
     onTrash: () -> Unit,
     onAddToPlaylist: (String) -> Unit,
+    onPlayNext: () -> Unit,
+    onAddToQueue: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var playlistMenuOpen by remember { mutableStateOf(false) }
@@ -520,6 +537,32 @@ private fun TrackRow(
                             )
                         }
                         DropdownMenuItem(
+                            text = { Text("Play next") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.QueueMusic,
+                                    contentDescription = null,
+                                )
+                            },
+                            onClick = {
+                                onPlayNext()
+                                menuOpen = false
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Add to queue") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.PlaylistAdd,
+                                    contentDescription = null,
+                                )
+                            },
+                            onClick = {
+                                onAddToQueue()
+                                menuOpen = false
+                            },
+                        )
+                        DropdownMenuItem(
                             text = { Text("Share track") },
                             leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
                             onClick = {
@@ -600,6 +643,7 @@ private fun SelectionBar(
     onRemove: () -> Unit,
     onAddToPlaylist: (String) -> Unit,
     onNewPlaylist: () -> Unit,
+    onQueueSelection: () -> Unit,
     onShare: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
@@ -650,6 +694,19 @@ private fun SelectionBar(
                         onClick = {
                             menuOpen = false
                             playlistMenuOpen = true
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Add selection to queue") },
+                        leadingIcon = {
+                            Icon(
+                                Icons.AutoMirrored.Filled.QueueMusic,
+                                contentDescription = null,
+                            )
+                        },
+                        onClick = {
+                            onQueueSelection()
+                            menuOpen = false
                         },
                     )
                     DropdownMenuItem(

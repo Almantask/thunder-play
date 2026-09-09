@@ -248,6 +248,27 @@ class LibraryViewModel @Inject constructor(
 
     // ------------------------------------------------------------- stats
 
+    /** Slots one track in after whatever is playing, rather than replacing the queue. */
+    fun playNext(track: TrackEntity) = player.playNext(listOf(track))
+
+    fun addToQueue(track: TrackEntity) = player.addToQueue(listOf(track))
+
+    /** Queues the ticked tracks in the order they appear in the list on screen. */
+    fun queueSelection() = viewModelScope.launch {
+        val ids = selection.value
+        if (ids.isEmpty()) return@launch
+
+        val visible = uiState.value.tracks.filter { it.driveId in ids }
+        // "Select all in library" can tick tracks the current filter hides. They have no on-screen
+        // order to preserve, so they follow the ones that do.
+        val onScreen = visible.map { it.driveId }.toSet()
+        val rest = trackDao.allActive().filter { it.driveId in ids && it.driveId !in onScreen }
+
+        player.addToQueue(visible + rest)
+        emit(LibraryEvent.Message("Queued ${visible.size + rest.size} track(s)"))
+        clearSelection()
+    }
+
     fun setRating(driveId: String, rating: Int) = viewModelScope.launch {
         stats.setRating(driveId, rating)
     }

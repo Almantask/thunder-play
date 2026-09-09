@@ -31,6 +31,9 @@ data class NowPlaying(
     val hasNext: Boolean = false,
     val hasPrevious: Boolean = false,
     val crossfading: Boolean = false,
+    /** One of [Player.REPEAT_MODE_OFF], [Player.REPEAT_MODE_ONE] or [Player.REPEAT_MODE_ALL]. */
+    val repeatMode: Int = Player.REPEAT_MODE_OFF,
+    val shuffleEnabled: Boolean = false,
     /** Codec details read from the decoder, absent until the stream has been parsed. */
     val codec: String? = null,
     val sampleRateHz: Int? = null,
@@ -41,6 +44,16 @@ data class NowPlaying(
     val progress: Float
         get() = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
 }
+
+/** One line of the Up next list. */
+data class QueueEntry(
+    val mediaId: String,
+    val title: String,
+    val subtitle: String,
+    /** Position in the queue, which is what the reorder and remove commands address. */
+    val index: Int,
+    val isCurrent: Boolean,
+)
 
 /**
  * The UI's handle on [PlaybackService].
@@ -57,6 +70,9 @@ class PlayerConnection @Inject constructor(
 
     private val _nowPlaying = MutableStateFlow(NowPlaying())
     val nowPlaying: StateFlow<NowPlaying> = _nowPlaying.asStateFlow()
+
+    private val _queue = MutableStateFlow<List<QueueEntry>>(emptyList())
+    val queue: StateFlow<List<QueueEntry>> = _queue.asStateFlow()
 
     private var controller: MediaController? = null
     private var connecting = false
@@ -108,8 +124,10 @@ class PlayerConnection @Inject constructor(
         val player = controller
         if (player == null || player.currentMediaItem == null) {
             _nowPlaying.value = NowPlaying()
+            _queue.value = emptyList()
             return
         }
+        publishQueue(player)
         val metadata = player.mediaMetadata
         val format = runCatching { audioFormat(player) }.getOrNull()
         _nowPlaying.value = NowPlaying(
@@ -125,6 +143,8 @@ class PlayerConnection @Inject constructor(
             hasNext = player.hasNextMediaItem(),
             hasPrevious = player.hasPreviousMediaItem(),
             crossfading = player.sessionExtras.getBoolean(PlaybackService.EXTRA_CROSSFADING),
+            repeatMode = player.repeatMode,
+            shuffleEnabled = player.shuffleModeEnabled,
             codec = format?.sampleMimeType?.substringAfter('/'),
             sampleRateHz = format?.sampleRate?.takeIf { it > 0 },
             channels = format?.channelCount?.takeIf { it > 0 },
@@ -152,9 +172,85 @@ class PlayerConnection @Inject constructor(
         player.play()
     }
 
+    /**
+     * Mirrors the session's timeline as the Up next list.
+     *
+     * Rebuilt on every event rather than diffed: the queue is the list the user was looking at,
+     * so a couple of hundred entries at most, and a stale queue view is worse than a cheap copy.
+     */
+    private fun publishQueue(player: MediaController) {
+        val count = player.mediaItemCount
+        val current = player.currentMediaItemIndex
+        _queue.value = (0 until count).map { index ->
+            val item = player.getMediaItemAt(index)
+            QueueEntry(
+                mediaId = item.mediaId,
+                title = item.mediaMetadata.title?.toString().orEmpty(),
+                subtitle = item.mediaMetadata.artist?.toString().orEmpty(),
+                index = index,
+                isCurrent = index == current,
+            )
+        }
+    }
+
     fun togglePlayPause() {
         val player = controller ?: return
         if (player.isPlaying) player.pause() else player.play()
+    }
+
+    /** Off, then all, then one - the order every other player cycles them in. */
+    fun cycleRepeat() {
+        val player = controller ?: return
+        player.repeatMode = when (player.repeatMode) {
+            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+            else -> Player.REPEAT_MODE_OFF
+        }
+    }
+
+    fun toggleShuffle() {
+        val player = controller ?: return
+        player.shuffleModeEnabled = !player.shuffleModeEnabled
+    }
+
+    fun playQueueIndex(index: Int) {
+        controller?.seekTo(index, 0L)
+    }
+
+    fun moveInQueue(from: Int, to: Int) {
+        val player = controller ?: return
+        if (from == to) return
+        player.moveMediaItem(from, to)
+    }
+
+    fun removeFromQueue(index: Int) {
+        controller?.removeMediaItem(index)
+    }
+
+    /**
+     * Queues [tracks] to play once the current one finishes, rather than at the end.
+     *
+     * With nothing playing there is no "next", so this starts them instead - otherwise the action
+     * would silently do nothing on a cold start.
+     */
+    fun playNext(tracks: List<TrackEntity>) {
+        if (tracks.isEmpty()) return
+        val player = controller ?: run { connect(); return }
+        if (player.currentMediaItem == null) {
+            playQueue(tracks, 0)
+            return
+        }
+        player.addMediaItems(player.currentMediaItemIndex + 1, tracks.map(TrackEntity::toMediaItem))
+    }
+
+    fun addToQueue(tracks: List<TrackEntity>) {
+        if (tracks.isEmpty()) return
+        val player = controller ?: run { connect(); return }
+        if (player.currentMediaItem == null) {
+            playQueue(tracks, 0)
+            return
+        }
+        player.addMediaItems(tracks.map(TrackEntity::toMediaItem))
     }
 
     fun next() = controller?.seekToNextMediaItem()

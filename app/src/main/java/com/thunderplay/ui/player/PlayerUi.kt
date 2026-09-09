@@ -5,6 +5,22 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.ModalBottomSheet
+import androidx.media3.common.Player
+import com.thunderplay.playback.QueueEntry
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -110,6 +126,7 @@ fun MiniPlayer(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NowPlayingScreen(
     state: NowPlaying,
@@ -117,15 +134,33 @@ fun NowPlayingScreen(
     rating: Int,
     playCount: Int,
     crossfading: Boolean,
+    queue: List<QueueEntry>,
     onCollapse: () -> Unit,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
     onSeek: (Float) -> Unit,
     onRate: (Int) -> Unit,
+    onCycleRepeat: () -> Unit,
+    onToggleShuffle: () -> Unit,
+    onPlayQueueIndex: (Int) -> Unit,
+    onMoveInQueue: (Int, Int) -> Unit,
+    onRemoveFromQueue: (Int) -> Unit,
 ) {
     // While dragging, follow the finger rather than the player, or the thumb fights the ticker.
     var scrubbing by remember { mutableStateOf<Float?>(null) }
+    var queueOpen by remember { mutableStateOf(false) }
+
+    if (queueOpen) {
+        ModalBottomSheet(onDismissRequest = { queueOpen = false }) {
+            QueueSheet(
+                queue = queue,
+                onPlay = onPlayQueueIndex,
+                onMove = onMoveInQueue,
+                onRemove = onRemoveFromQueue,
+            )
+        }
+    }
 
     Column(
         Modifier
@@ -141,6 +176,12 @@ fun NowPlayingScreen(
             Spacer(Modifier.weight(1f))
             if (crossfading) {
                 Text("Crossfading", style = MaterialTheme.typography.labelMedium)
+            }
+            IconButton(onClick = { queueOpen = true }) {
+                Icon(
+                    Icons.AutoMirrored.Filled.QueueMusic,
+                    contentDescription = "Up next (${queue.size})",
+                )
             }
         }
 
@@ -180,6 +221,21 @@ fun NowPlayingScreen(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            IconButton(onClick = onToggleShuffle) {
+                Icon(
+                    Icons.Default.Shuffle,
+                    contentDescription = if (state.shuffleEnabled) {
+                        "Shuffle on"
+                    } else {
+                        "Shuffle off"
+                    },
+                    tint = if (state.shuffleEnabled) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        LocalContentColor.current
+                    },
+                )
+            }
             IconButton(onClick = onPrevious, enabled = state.hasPrevious) {
                 Icon(
                     Icons.Default.SkipPrevious,
@@ -201,11 +257,117 @@ fun NowPlayingScreen(
                     modifier = Modifier.size(36.dp),
                 )
             }
+            IconButton(onClick = onCycleRepeat) {
+                Icon(
+                    if (state.repeatMode == Player.REPEAT_MODE_ONE) {
+                        Icons.Default.RepeatOne
+                    } else {
+                        Icons.Default.Repeat
+                    },
+                    contentDescription = when (state.repeatMode) {
+                        Player.REPEAT_MODE_ONE -> "Repeat one"
+                        Player.REPEAT_MODE_ALL -> "Repeat all"
+                        else -> "Repeat off"
+                    },
+                    tint = if (state.repeatMode == Player.REPEAT_MODE_OFF) {
+                        LocalContentColor.current
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                )
+            }
         }
 
         Spacer(Modifier.weight(1f))
 
         TrackDetails(track = track, state = state)
+    }
+}
+
+/**
+ * The queue, as a list that can be played from, reordered and pruned.
+ *
+ * Reordering is by menu rather than by dragging: a drag-and-drop LazyColumn needs a library the
+ * project does not otherwise want, and moving a track one or two places is what this is actually
+ * for - the whole list is only ever the view it was played from.
+ */
+@Composable
+private fun QueueSheet(
+    queue: List<QueueEntry>,
+    onPlay: (Int) -> Unit,
+    onMove: (Int, Int) -> Unit,
+    onRemove: (Int) -> Unit,
+) {
+    Text(
+        if (queue.isEmpty()) "Nothing queued" else "Up next",
+        style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+    )
+
+    LazyColumn(Modifier.fillMaxWidth()) {
+        items(queue, key = { it.index }) { entry ->
+            var menuOpen by remember { mutableStateOf(false) }
+
+            ListItem(
+                modifier = Modifier.clickable { onPlay(entry.index) },
+                leadingContent = {
+                    Text(
+                        "${entry.index + 1}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+                headlineContent = {
+                    Text(
+                        entry.title,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = if (entry.isCurrent) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                    )
+                },
+                supportingContent = {
+                    Text(entry.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                },
+                trailingContent = {
+                    Box {
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "Queue actions")
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            if (entry.index > 0) {
+                                DropdownMenuItem(
+                                    text = { Text("Move up") },
+                                    onClick = {
+                                        onMove(entry.index, entry.index - 1)
+                                        menuOpen = false
+                                    },
+                                )
+                            }
+                            if (entry.index < queue.lastIndex) {
+                                DropdownMenuItem(
+                                    text = { Text("Move down") },
+                                    onClick = {
+                                        onMove(entry.index, entry.index + 1)
+                                        menuOpen = false
+                                    },
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Remove from queue") },
+                                onClick = {
+                                    onRemove(entry.index)
+                                    menuOpen = false
+                                },
+                            )
+                        }
+                    }
+                },
+            )
+        }
     }
 }
 
