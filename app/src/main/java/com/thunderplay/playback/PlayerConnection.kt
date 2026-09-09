@@ -61,6 +61,9 @@ class PlayerConnection @Inject constructor(
     private var controller: MediaController? = null
     private var connecting = false
 
+    /** Survives a reconnect, so a screen holding an override does not silently lose it. */
+    private var crossfadeOverrideMs: Int? = null
+
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = publish()
     }
@@ -86,6 +89,9 @@ class PlayerConnection @Inject constructor(
                 it.addListener(listener)
                 publish()
                 startPositionTicker()
+                // A screen can ask for an override before the controller exists; re-send it now
+                // rather than losing it, or A/B judging would silently blend its takes.
+                sendCrossfadeOverride()
             }
         }, MoreExecutors.directExecutor())
     }
@@ -166,11 +172,39 @@ class PlayerConnection @Inject constructor(
         if (duration > 0) player.seekTo((duration * fraction).toLong())
     }
 
-    fun toggleLike() {
+    fun rateStars() {
         val player = controller ?: return
         player.sendCustomCommand(
-            SessionCommand(PlaybackService.ACTION_TOGGLE_LIKE, android.os.Bundle.EMPTY),
+            SessionCommand(PlaybackService.ACTION_RATE_STARS, android.os.Bundle.EMPTY),
             android.os.Bundle.EMPTY,
+        )
+    }
+
+    fun toggleLike() {
+        rateStars()
+    }
+
+    /**
+     * Overrides the crossfade length for as long as a screen needs it; null restores the setting.
+     *
+     * A/B judging sets 0. Blending two takes of the same cue overlaps them, and manual Next blends
+     * by default, so without this every comparison would be heard through the other take.
+     */
+    fun setCrossfadeOverride(ms: Int?) {
+        crossfadeOverrideMs = ms
+        sendCrossfadeOverride()
+    }
+
+    private fun sendCrossfadeOverride() {
+        val player = controller ?: return
+        player.sendCustomCommand(
+            SessionCommand(PlaybackService.ACTION_SET_CROSSFADE_OVERRIDE, android.os.Bundle.EMPTY),
+            android.os.Bundle().apply {
+                putInt(
+                    PlaybackService.EXTRA_CROSSFADE_MS,
+                    crossfadeOverrideMs ?: PlaybackService.NO_CROSSFADE_OVERRIDE,
+                )
+            },
         )
     }
 

@@ -20,6 +20,7 @@ import com.thunderplay.playlist.ShareService
 import com.thunderplay.playlist.TrackExporter
 import com.thunderplay.stats.StatsGateway
 import com.thunderplay.sync.LibraryRefresher
+import com.thunderplay.sync.RefreshProgress
 import com.thunderplay.sync.RefreshResult
 import com.thunderplay.sync.TrashService
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -38,7 +39,21 @@ import kotlin.random.Random
 
 sealed interface RefreshState {
     data object Idle : RefreshState
-    data object Running : RefreshState
+
+    /** Tracks found so far are already visible; this is just the running commentary. */
+    data class Running(
+        val tracksFound: Int = 0,
+        val foldersScanned: Int = 0,
+        val linking: Boolean = false,
+    ) : RefreshState {
+        val label: String
+            get() = when {
+                linking -> "Matching source files..."
+                tracksFound == 0 -> "Scanning Drive..."
+                else -> "Found $tracksFound track(s) in $foldersScanned folder(s)..."
+            }
+    }
+
     data class Done(val result: RefreshResult) : RefreshState
     data class Failed(val message: String) : RefreshState
 }
@@ -54,6 +69,7 @@ data class LibraryUiState(
     val view: LibraryView = LibraryView(),
     val tracks: List<TrackEntity> = emptyList(),
     val categories: List<String> = emptyList(),
+    val levels: List<String> = emptyList(),
     val playlists: List<PlaylistEntity> = emptyList(),
     val localStates: Map<String, LocalState> = emptyMap(),
     val refresh: RefreshState = RefreshState.Idle,
@@ -113,8 +129,9 @@ class LibraryViewModel @Inject constructor(
     // Filtering happens in SQL; ordering is applied here so the seeded shuffle stays stable.
     private val filtered = view.flatMapLatest { v ->
         trackDao.observeTracks(
-            category = v.categoryFilter,
-            likedOnly = v.effectiveLikedOnly,
+            category = v.category,
+            level = v.level,
+            minStars = v.stars.minimum,
             query = v.query.trim(),
         )
     }
@@ -123,15 +140,17 @@ class LibraryViewModel @Inject constructor(
         view,
         filtered,
         trackDao.observeCategories(),
+        trackDao.observeLevels(),
         trackDao.observeAll(),
-    ) { v, t, categories, all ->
-        ListSnapshot(v, t.ordered(v), categories, all.size)
+    ) { v, t, categories, levels, all ->
+        ListSnapshot(v, t.ordered(v), categories, levels, all.size)
     }
 
     private data class ListSnapshot(
         val view: LibraryView,
         val tracks: List<TrackEntity>,
         val categories: List<String>,
+        val levels: List<String>,
         val libraryTotal: Int,
     )
 
@@ -151,6 +170,7 @@ class LibraryViewModel @Inject constructor(
             view = snapshot.view,
             tracks = snapshot.tracks,
             categories = snapshot.categories,
+            levels = snapshot.levels,
             playlists = playlists,
             localStates = localStates,
             refresh = refresh,
@@ -167,9 +187,14 @@ class LibraryViewModel @Inject constructor(
 
     // ------------------------------------------------------------- view state
 
-    fun setScope(scope: LibraryView.Scope) = update { it.withScope(scope) }
+    fun setStars(stars: LibraryView.Stars) = update { it.copy(stars = stars) }
 
-    fun toggleLikedOnly() = update { it.copy(likedOnly = !it.likedOnly) }
+    fun setCategory(category: String?) = update { it.copy(category = category) }
+
+    fun setLevel(level: String?) = update { it.copy(level = level) }
+
+    /** Resets the three dropdowns. The search text is left alone; it is visibly its own control. */
+    fun clearFilters() = update { it.cleared() }
 
     fun setOrder(order: LibraryView.Order) = update {
         // Entering Random needs a fresh seed, or it would repeat the previous permutation.
@@ -395,16 +420,31 @@ class LibraryViewModel @Inject constructor(
     // ------------------------------------------------------------- refresh
 
     fun refresh() {
-        if (refreshState.value == RefreshState.Running) return
-        refreshState.value = RefreshState.Running
+        if (refreshState.value is RefreshState.Running) return
+        refreshState.value = RefreshState.Running()
         viewModelScope.launch {
-            refreshState.value = runCatching { refresher.refresh() }.fold(
-                onSuccess = { RefreshState.Done(it) },
-                onFailure = { cause ->
-                    diagnostics.error("Refresh", "Library refresh failed", cause)
-                    RefreshState.Failed(readable(cause))
-                },
-            )
+            runCatching {
+                // Each batch is already in the database by the time it is reported, so the list
+                // grows underneath this while the count ticks up.
+                refresher.refreshProgressively().collect { progress ->
+                    refreshState.value = when (progress) {
+                        is RefreshProgress.Scanning -> RefreshState.Running(
+                            tracksFound = progress.tracksFound,
+                            foldersScanned = progress.foldersScanned,
+                        )
+
+                        is RefreshProgress.Linking -> RefreshState.Running(
+                            tracksFound = progress.tracksFound,
+                            linking = true,
+                        )
+
+                        is RefreshProgress.Complete -> RefreshState.Done(progress.result)
+                    }
+                }
+            }.onFailure { cause ->
+                diagnostics.error("Refresh", "Library refresh failed", cause)
+                refreshState.value = RefreshState.Failed(readable(cause))
+            }
         }
     }
 

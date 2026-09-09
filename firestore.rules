@@ -3,8 +3,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Ratings, play history and playlists. Anonymous auth is enough: the app is personal, and the
-    // data lives at a fixed path rather than under a uid so every device shares one library.
+    // Ratings, play history and playlists. Anonymous and authenticated callers allowed.
     match /libraries/{libraryId}/{document=**} {
       allow read, write: if request.auth != null;
     }

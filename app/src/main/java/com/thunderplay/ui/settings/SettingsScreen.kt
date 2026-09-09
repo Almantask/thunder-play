@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings as AndroidSettings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -35,7 +37,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -48,6 +53,13 @@ import com.thunderplay.settings.SyncInterval
 fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
+
+    val signInLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        viewModel.handleGoogleSignIn(result.data)
+    }
 
     LaunchedEffect(state.pendingShare) {
         state.pendingShare?.let {
@@ -79,7 +91,15 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 TextButton(onClick = viewModel::dismissDiagnostics) { Text("Close") }
             },
             dismissButton = {
-                TextButton(onClick = viewModel::shareDiagnostics) { Text("Send") }
+                Row {
+                    TextButton(onClick = {
+                        clipboardManager.setText(AnnotatedString(text))
+                        Toast.makeText(context, "Log copied to clipboard", Toast.LENGTH_SHORT).show()
+                    }) {
+                        Text("Copy")
+                    }
+                    TextButton(onClick = viewModel::shareDiagnostics) { Text("Send") }
+                }
             },
         )
     }
@@ -160,6 +180,15 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             }
 
             HorizontalDivider()
+            SectionHeader("A/B testing")
+            SwitchRow(
+                title = "Judge rival takes",
+                subtitle = "Adds a tab for picking one keeper per cue and filing the rest",
+                checked = state.settings.abTestingEnabled,
+                onCheckedChange = viewModel::setAbTesting,
+            )
+
+            HorizontalDivider()
             SectionHeader("Storage")
             ListItem(
                 headlineContent = { Text("Downloaded audio") },
@@ -212,12 +241,21 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 supportingContent = {
                     Text(
                         if (state.firebaseConfigured) {
-                            "Ratings, history and sharing are active"
+                            state.accountEmail?.let {
+                                "Signed in as $it"
+                            } ?: "Active (Anonymous session)"
                         } else {
                             "Not configured - stats stay on this device only"
                         },
                     )
                 },
+                trailingContent = if (state.firebaseConfigured && state.accountEmail == null) {
+                    {
+                        TextButton(onClick = { signInLauncher.launch(viewModel.getGoogleSignInIntent()) }) {
+                            Text("Sign In")
+                        }
+                    }
+                } else null,
             )
             ListItem(
                 headlineContent = { Text("Source folder") },

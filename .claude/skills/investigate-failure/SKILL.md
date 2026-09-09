@@ -1,6 +1,6 @@
 ---
 name: investigate-failure
-description: Diagnose a failure the user hit while testing Thunder Play on their phone. Use this whenever they report that something in the app broke, failed, errored, "doesn't work", shows a message they don't understand, or when they say they have sent or uploaded logs. It explains where the phone's diagnostics log lands, how to read it from the PC, and the failure signatures this project has already hit — so start here rather than guessing at causes.
+description: Diagnose a failure the user hit while testing Thunder Play on their phone. Use this whenever investigating failures or when they report that something in the app broke, failed, errored, "doesn't work", shows a message they don't understand, or when they say they have sent or uploaded logs. It explains where the phone's diagnostics log lands, how to read it from the PC, and the failure signatures this project has already hit — so start here rather than guessing at causes.
 ---
 
 # Diagnosing a failure on the phone

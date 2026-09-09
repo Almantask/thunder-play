@@ -1,9 +1,13 @@
 package com.thunderplay.stats
 
 import android.content.Context
+import android.content.Intent
 import android.util.Log
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
@@ -12,7 +16,12 @@ import com.thunderplay.data.PlayDao
 import com.thunderplay.data.PlayRollupEntity
 import com.thunderplay.data.TrackDao
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -48,14 +57,110 @@ class FirestoreStats @Inject constructor(
 
     val isAvailable: Boolean get() = available
 
-    /** Signs in anonymously. There is no login UI; this just gets past the security rules. */
-    suspend fun ensureSignedIn(): Boolean {
-        if (!available) return false
-        val auth = FirebaseAuth.getInstance()
-        if (auth.currentUser != null) return true
-        return runCatching { auth.signInAnonymously().await() }
-            .onFailure { Log.w(TAG, "Anonymous sign-in failed; staying local-only", it) }
-            .isSuccess
+    private val auth: FirebaseAuth? by lazy {
+        if (!available) null else FirebaseAuth.getInstance()
+    }
+
+    private val _userEmail = MutableStateFlow<String?>(
+        if (available) FirebaseAuth.getInstance().currentUser?.email else null
+    )
+    val userEmail: StateFlow<String?> = _userEmail.asStateFlow()
+
+    val isAuthorized: Boolean
+        get() = auth?.currentUser?.email?.equals(AUTHORIZED_EMAIL, ignoreCase = true) == true
+
+    fun getGoogleSignInIntent(): Intent {
+        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(WEB_CLIENT_ID)
+            .requestEmail()
+            .setAccountName(AUTHORIZED_EMAIL)
+            .build()
+        return GoogleSignIn.getClient(context, gso).signInIntent
+    }
+
+    suspend fun handleSignInResult(data: Intent?): Boolean = withContext(Dispatchers.IO) {
+        val a = auth ?: return@withContext false
+        try {
+            val account = GoogleSignIn.getSignedInAccountFromIntent(data).await()
+            val email = account.email
+            if (email == null || !email.equals(AUTHORIZED_EMAIL, ignoreCase = true)) {
+                Log.w(TAG, "Sign-in rejected: $email is not authorized (expected $AUTHORIZED_EMAIL)")
+                a.signOut()
+                _userEmail.value = null
+                false
+            } else {
+                val token = account.idToken ?: return@withContext false
+                val cred = GoogleAuthProvider.getCredential(token, null)
+                val result = a.signInWithCredential(cred).await()
+                _userEmail.value = result.user?.email
+                Log.i(TAG, "Signed in successfully with Google as ${result.user?.email}")
+                true
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Google Sign-In failed", e)
+            if (a.currentUser == null) {
+                runCatching { a.signInAnonymously().await() }
+            }
+            false
+        }
+    }
+
+    /**
+     * Signs in with the authorized Google account (almantusk@gmail.com).
+     *
+     * If already authenticated with that account, returns true immediately.
+     * Otherwise, attempts silent sign-in so no UI prompt is needed if already authorized on the device.
+     * Falls back to anonymous authentication if Google sign-in is not active, ensuring that
+     * operations (ratings, play history, playlist sharing) are never broken.
+     */
+    suspend fun ensureSignedIn(): Boolean = withContext(Dispatchers.IO) {
+        if (!available) return@withContext false
+        val a = auth ?: return@withContext false
+        val current = a.currentUser
+        if (current != null && current.email.equals(AUTHORIZED_EMAIL, ignoreCase = true)) {
+            _userEmail.value = current.email
+            return@withContext true
+        }
+
+        val googleSignedIn = runCatching {
+            val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestIdToken(WEB_CLIENT_ID)
+                .requestEmail()
+                .setAccountName(AUTHORIZED_EMAIL)
+                .build()
+            val client = GoogleSignIn.getClient(context, gso)
+            val account = client.silentSignIn().await()
+            val email = account.email
+            if (email != null && email.equals(AUTHORIZED_EMAIL, ignoreCase = true) && account.idToken != null) {
+                val cred = GoogleAuthProvider.getCredential(account.idToken, null)
+                val res = a.signInWithCredential(cred).await()
+                _userEmail.value = res.user?.email
+                true
+            } else {
+                false
+            }
+        }.getOrElse {
+            Log.w(TAG, "Silent Google sign-in failed: ${it.message}")
+            false
+        }
+
+        if (googleSignedIn) return@withContext true
+
+        // Fallback: If we already have a valid signed-in user (e.g. anonymous), keep it.
+        if (a.currentUser != null) {
+            _userEmail.value = a.currentUser?.email
+            return@withContext true
+        }
+
+        // Otherwise sign in anonymously so request.auth != null is satisfied.
+        runCatching {
+            a.signInAnonymously().await()
+            _userEmail.value = null
+            true
+        }.getOrElse {
+            Log.w(TAG, "Anonymous sign-in fallback failed", it)
+            false
+        }
     }
 
     fun pushRating(driveId: String, rating: Int, ratedAt: Long, lastRating: Int) {
@@ -116,6 +221,37 @@ class FirestoreStats @Inject constructor(
                 com.google.firebase.firestore.SetOptions.merge(),
             )
             .addOnFailureListener { Log.w(TAG, "Trash marker push failed for $driveId", it) }
+    }
+
+    /**
+     * Records one take's A/B verdict.
+     *
+     * The durable, queryable copy of a judgement. Drive file metadata carries the same facts on the
+     * file itself, but only Firestore can answer "show me everything judged bad" without walking
+     * the tree.
+     */
+    fun pushAbVerdict(
+        driveId: String,
+        verdict: String,
+        winnerDriveId: String,
+        groupKey: String,
+        prompt: String?,
+        originalFolderPath: String,
+    ) {
+        val store = db ?: return
+        store.document(FirestorePaths.LIBRARY).collection(FirestorePaths.TRACKS).document(driveId)
+            .set(
+                mapOf(
+                    "abVerdict" to verdict,
+                    "abWinner" to winnerDriveId,
+                    "abGroupKey" to groupKey,
+                    "abPrompt" to prompt,
+                    "abJudgedFrom" to originalFolderPath,
+                    "abJudgedAt" to System.currentTimeMillis(),
+                ),
+                com.google.firebase.firestore.SetOptions.merge(),
+            )
+            .addOnFailureListener { Log.w(TAG, "A/B verdict push failed for $driveId", it) }
     }
 
     /** Pulls remote rating/count values into Room so the library list reflects other devices. */
@@ -243,10 +379,12 @@ class FirestoreStats @Inject constructor(
         return deletedCount
     }
 
-    private companion object {
-        const val TAG = "FirestoreStats"
-        const val PLAY_PAGE_SIZE = 500L
-        const val BATCH_LIMIT = 450
+    companion object {
+        const val AUTHORIZED_EMAIL = "almantusk@gmail.com"
+        const val WEB_CLIENT_ID = "41460511094-897hudvk22h89the196gq2am5jtnn2gd.apps.googleusercontent.com"
+        private const val TAG = "FirestoreStats"
+        private const val PLAY_PAGE_SIZE = 500L
+        private const val BATCH_LIMIT = 450
     }
 }
 

@@ -58,3 +58,23 @@ data class CreateFileRequest(
     val parents: List<String>,
     val mimeType: String = FOLDER_MIME,
 )
+
+/**
+ * A partial metadata write. Moshi omits nulls, so an unset field leaves Drive's value alone rather
+ * than blanking it.
+ *
+ * Drive caps [description] at 4096 characters, and each appProperties key/value pair at 124 bytes
+ * total - which a 120-character prompt can exceed on its own once encoded. So prose goes in the
+ * description and only short structured values go in [appProperties].
+ */
+@JsonClass(generateAdapter = true)
+data class FileMetadataPatch(
+    val description: String? = null,
+    val appProperties: Map<String, String>? = null,
+)
+
+/** One folder's worth of files from a streaming walk, with running progress. */
+data class WalkBatch(
+    val files: List<DriveEntry>,
+    val foldersScanned: Int,
+)

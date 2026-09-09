@@ -24,9 +24,10 @@ class EmptyDriveLibraryException(message: String) : IllegalStateException(messag
 /**
  * Cross-references audio files in Google Drive against metadata in Firebase Firestore.
  *
- * If a track document in Firestore no longer exists in Google Drive (neither in the playable
- * music-mobile folder nor in _ThunderPlayTrash), it is treated as an orphan and purged along
- * with its associated play history and playlist references.
+ * If a track document in Firestore no longer exists in Google Drive (not in the catalog root,
+ * nor in _ThunderPlayTrash, nor in either _ThunderPlayAB batch), it is
+ * treated as an orphan and purged along with its associated play history and playlist
+ * references.
  */
 @Singleton
 class FirebaseCleanupService @Inject constructor(
@@ -42,7 +43,7 @@ class FirebaseCleanupService @Inject constructor(
             ?: drive.findFolderByName(AppSettings.LIBRARY_FOLDER_NAME)?.id
             ?: throw IllegalStateException("Library folder is not visible to the service account.")
 
-        // Collect all file IDs in Drive under playable root (music-mobile/)
+        // Collect all file IDs in Drive under the catalog root (music/ by default)
         val playableRoot = drive.findChildFolder(rootId, current.sourceRoot)
             ?: throw IllegalStateException("No '${current.sourceRoot}' folder inside ${AppSettings.LIBRARY_FOLDER_NAME}.")
         val playableEntries = drive.walk(playableRoot.id).filter { it.isAudio }
@@ -51,7 +52,12 @@ class FirebaseCleanupService @Inject constructor(
         val trashRoot = drive.findChildFolder(rootId, AppSettings.TRASH_FOLDER_NAME)
         val trashEntries = trashRoot?.let { drive.walk(it.id).filter { it.isAudio } }.orEmpty()
 
-        val driveFileIds = (playableEntries.map { it.file.id } + trashEntries.map { it.file.id }).toSet()
+        // And in _ThunderPlayAB/, so judging a take does not cost it its ratings and play history.
+        // One walk covers both verdicts, since walk() recurses.
+        val abRoot = drive.findChildFolder(rootId, AppSettings.AB_FOLDER_NAME)
+        val abEntries = abRoot?.let { drive.walk(it.id).filter { it.isAudio } }.orEmpty()
+
+        val driveFileIds = (playableEntries + trashEntries + abEntries).map { it.file.id }.toSet()
 
         // Critical safety check: if Drive returned 0 files, abort to prevent catastrophic wipe
         if (driveFileIds.isEmpty()) {

@@ -22,6 +22,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Rating
+import androidx.media3.common.StarRating
+import com.thunderplay.R
 import javax.inject.Inject
 
 /**
@@ -51,6 +55,14 @@ class PlaybackService : MediaSessionService() {
     private var playTracker: PlayTracker? = null
     private var crossfadePlayer: CrossfadePlayer? = null
 
+    private var settingsCrossfadeMs = com.thunderplay.settings.AppSettings.DEFAULT_CROSSFADE_MS
+    /** Set while a screen needs blending suppressed; null means "follow the setting". */
+    private var crossfadeOverrideMs: Int? = null
+
+    private fun applyCrossfade() {
+        crossfadePlayer?.crossfadeMs = crossfadeOverrideMs ?: settingsCrossfadeMs
+    }
+
     override fun onCreate() {
         super.onCreate()
 
@@ -64,14 +76,23 @@ class PlaybackService : MediaSessionService() {
 
         session = MediaSession.Builder(this, player)
             .setCallback(SessionCallback())
-            .setMediaButtonPreferences(listOf(likeButton(liked = false)))
+            .setMediaButtonPreferences(listOf(starRatingButton(rating = 0)))
             .build()
 
-        scope.launch { refreshLikeButton() }
+        scope.launch { refreshRatingButton() }
+
+        player.addListener(object : Player.Listener {
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                scope.launch { refreshRatingButton() }
+            }
+        })
 
         // Crossfade length is a setting, so follow it rather than reading it once at startup.
         scope.launch {
-            settings.settings.collect { crossfadePlayer?.crossfadeMs = it.crossfadeMs }
+            settings.settings.collect {
+                settingsCrossfadeMs = it.crossfadeMs
+                applyCrossfade()
+            }
         }
 
         // Surfaced through session extras so the app UI can show a transition indicator; a
@@ -116,7 +137,9 @@ class PlaybackService : MediaSessionService() {
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(
                     default.availableSessionCommands.buildUpon()
+                        .add(SessionCommand(ACTION_RATE_STARS, android.os.Bundle.EMPTY))
                         .add(SessionCommand(ACTION_TOGGLE_LIKE, android.os.Bundle.EMPTY))
+                        .add(SessionCommand(ACTION_SET_CROSSFADE_OVERRIDE, android.os.Bundle.EMPTY))
                         .build(),
                 )
                 .build()
@@ -128,38 +151,88 @@ class PlaybackService : MediaSessionService() {
             customCommand: SessionCommand,
             args: android.os.Bundle,
         ): ListenableFuture<SessionResult> {
-            if (customCommand.customAction != ACTION_TOGGLE_LIKE) {
-                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+            // Not about the current track, so it is handled before the mediaId guard - the
+            // override has to take effect even with nothing loaded.
+            if (customCommand.customAction == ACTION_SET_CROSSFADE_OVERRIDE) {
+                val ms = args.getInt(EXTRA_CROSSFADE_MS, NO_CROSSFADE_OVERRIDE)
+                crossfadeOverrideMs = ms.takeIf { it >= 0 }
+                applyCrossfade()
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
+
             val mediaId = session.player.currentMediaItem?.mediaId
                 ?: return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
 
-            scope.launch {
-                stats.toggleLike(mediaId)
-                refreshLikeButton()
+            when (customCommand.customAction) {
+                ACTION_RATE_STARS, ACTION_TOGGLE_LIKE -> {
+                    scope.launch {
+                        val current = stats.rating(mediaId)
+                        val next = if (current >= 5) 0 else current + 1
+                        stats.setRating(mediaId, next)
+                        refreshRatingButton()
+                    }
+                    return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                }
+                else -> return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+            }
+        }
+
+        override fun onSetRating(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            rating: Rating,
+        ): ListenableFuture<SessionResult> {
+            val mediaId = session.player.currentMediaItem?.mediaId
+                ?: return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            if (rating is StarRating) {
+                val stars = rating.starRating.toInt().coerceIn(0, 5)
+                scope.launch {
+                    stats.setRating(mediaId, stars)
+                    refreshRatingButton()
+                }
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
         }
     }
 
-    /** Rebuilds the button so the icon reflects the new state on the lock screen. */
-    private suspend fun refreshLikeButton() {
+    /** Rebuilds the button so the star rating reflects the new state in the notification. */
+    private suspend fun refreshRatingButton() {
         val current = session ?: return
         val mediaId = current.player.currentMediaItem?.mediaId
-        val liked = mediaId?.let { stats.rating(it) >= 1 } ?: false
-        current.setMediaButtonPreferences(listOf(likeButton(liked)))
+        val rating = mediaId?.let { stats.rating(it) } ?: 0
+        current.setMediaButtonPreferences(listOf(starRatingButton(rating)))
     }
 
-    private fun likeButton(liked: Boolean) = CommandButton.Builder(
-        if (liked) CommandButton.ICON_HEART_FILLED else CommandButton.ICON_HEART_UNFILLED,
-    )
-        .setDisplayName(if (liked) "Unlike" else "Like")
-        .setSessionCommand(SessionCommand(ACTION_TOGGLE_LIKE, android.os.Bundle.EMPTY))
-        .setSlots(CommandButton.SLOT_OVERFLOW)
-        .build()
+    private fun starRatingButton(rating: Int): CommandButton {
+        val hasRating = rating in 1..5
+        val iconRes = if (hasRating) R.drawable.ic_star_filled else R.drawable.ic_star_outline
+        val displayName = if (hasRating) {
+            "$rating star${if (rating == 1) "" else "s"}"
+        } else {
+            "Rate"
+        }
+        return CommandButton.Builder()
+            .setIconResId(iconRes)
+            .setDisplayName(displayName)
+            .setSessionCommand(SessionCommand(ACTION_RATE_STARS, android.os.Bundle.EMPTY))
+            .setSlots(CommandButton.SLOT_OVERFLOW)
+            .build()
+    }
 
     companion object {
+        const val ACTION_RATE_STARS = "com.thunderplay.RATE_STARS"
         const val ACTION_TOGGLE_LIKE = "com.thunderplay.TOGGLE_LIKE"
+
+        /**
+         * Suspends crossfading for as long as a screen needs it, without touching the setting.
+         *
+         * A/B judging is the case: blending two takes of the same cue overlaps them, which is
+         * precisely what makes them impossible to compare. Writing 0 into the user's setting and
+         * restoring it on exit would leave crossfade permanently off after a crash.
+         */
+        const val ACTION_SET_CROSSFADE_OVERRIDE = "com.thunderplay.SET_CROSSFADE_OVERRIDE"
+        const val EXTRA_CROSSFADE_MS = "crossfadeMs"
+        const val NO_CROSSFADE_OVERRIDE = -1
         const val EXTRA_CROSSFADING = "com.thunderplay.CROSSFADING"
     }
 }

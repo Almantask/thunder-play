@@ -2,7 +2,9 @@ package com.thunderplay.drive
 
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.test.runTest
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Test
 
 /**
@@ -58,6 +60,31 @@ class DriveRepositoryTest {
 
         override suspend fun download(fileId: String, alt: String): ResponseBody =
             error("not used")
+
+        val ranges = mutableListOf<String>()
+
+        /** Answers with [headBytes], so a caller asking for more than the file holds still works. */
+        var headBytes: ByteArray = ByteArray(0)
+
+        override suspend fun downloadRange(
+            fileId: String,
+            range: String,
+            alt: String,
+        ): ResponseBody {
+            ranges += range
+            return headBytes.toResponseBody("audio/wav".toMediaType())
+        }
+
+        val metadata = mutableListOf<Pair<String, FileMetadataPatch>>()
+
+        override suspend fun updateMetadata(
+            fileId: String,
+            request: FileMetadataPatch,
+            fields: String,
+        ): DriveFile {
+            metadata += fileId to request
+            return tree.values.flatten().first { it.id == fileId }
+        }
 
         override suspend fun uploadMedia(
             fileId: String,
@@ -155,6 +182,51 @@ class DriveRepositoryTest {
     }
 
     @Test
+    fun `moveTo is a no-op when the file is already in the destination`() = runTest {
+        // Drive 400s when addParents and removeParents overlap, and a retry or a re-judge hands us
+        // exactly that case.
+        val api = FakeApi(tree)
+        val file = track("a", "a.m4a", "f2").copy(parents = listOf("dest"))
+
+        val result = DriveRepository(api).moveTo(file, "dest")
+
+        assertThat(result).isSameInstanceAs(file)
+    }
+
+    @Test
+    fun `readHead asks for a bounded range and returns only that many bytes`() = runTest {
+        val api = FakeApi(tree).apply { headBytes = ByteArray(9000) { it.toByte() } }
+
+        val head = DriveRepository(api).readHead("a", 4096)
+
+        assertThat(api.ranges).containsExactly("bytes=0-4095")
+        // Drive can ignore the header and send everything; the read must still be bounded.
+        assertThat(head).hasLength(4096)
+    }
+
+    @Test
+    fun `readHead returns null rather than throwing when Drive refuses`() = runTest {
+        val api = object : DriveApi by FakeApi(tree) {
+            override suspend fun downloadRange(fileId: String, range: String, alt: String) =
+                error("403")
+        }
+
+        assertThat(DriveRepository(api).readHead("a", 4096)).isNull()
+    }
+
+    @Test
+    fun `writeMetadata sends description and appProperties together`() = runTest {
+        val api = FakeApi(tree)
+
+        DriveRepository(api).writeMetadata("a", "a quiet bed", mapOf("abVerdict" to "good"))
+
+        val (fileId, patch) = api.metadata.single()
+        assertThat(fileId).isEqualTo("a")
+        assertThat(patch.description).isEqualTo("a quiet bed")
+        assertThat(patch.appProperties).containsExactly("abVerdict", "good")
+    }
+
+    @Test
     fun `ensureChildFolder creates the folder only when it is missing`() = runTest {
         val api = FakeApi(tree)
         val repo = DriveRepository(api)
@@ -216,5 +288,58 @@ class DriveRepositoryTest {
         assertThat(entry("track.wav").isAudio).isTrue()
         assertThat(entry("cover.jpg").isAudio).isFalse()
         assertThat(entry("no-extension").isAudio).isFalse()
+    }
+
+    @Test
+    fun `walkStreaming reports results before the whole tree is listed`() = runTest {
+        val batches = mutableListOf<WalkBatch>()
+        DriveRepository(FakeApi(tree)).walkStreaming("root").collect(batches::add)
+
+        // The point of streaming: more than one emission, so the UI fills in progressively
+        // instead of waiting for every request to return.
+        assertThat(batches.size).isAtLeast(2)
+        assertThat(batches.first().foldersScanned).isEqualTo(1)
+    }
+
+    @Test
+    fun `walkStreaming finds exactly what the blocking walk finds`() = runTest {
+        val repo = DriveRepository(FakeApi(tree))
+        val streamed = mutableListOf<DriveEntry>()
+        repo.walkStreaming("root").collect { streamed += it.files }
+
+        assertThat(streamed.map { it.relativePath })
+            .containsExactlyElementsIn(repo.walk("root").map { it.relativePath })
+    }
+
+    @Test
+    fun `foldersScanned climbs monotonically so progress never goes backwards`() = runTest {
+        val counts = mutableListOf<Int>()
+        DriveRepository(FakeApi(tree)).walkStreaming("root").collect { counts += it.foldersScanned }
+
+        assertThat(counts).isInOrder()
+        assertThat(counts.distinct()).hasSize(counts.size)
+    }
+
+    @Test
+    fun `a folder reachable twice is still only walked once`() = runTest {
+        // Drive shortcuts can make a tree cyclic; a streaming walk must not loop forever.
+        val cyclic = mapOf(
+            "root" to listOf(folder("f1", "A")),
+            "f1" to listOf(folder("root", "back-to-root"), track("t", "t.m4a", "f1")),
+        )
+        val streamed = mutableListOf<DriveEntry>()
+        DriveRepository(FakeApi(cyclic)).walkStreaming("root").collect { streamed += it.files }
+
+        assertThat(streamed).hasSize(1)
+    }
+
+    @Test
+    fun `an empty library completes without emitting files`() = runTest {
+        val streamed = mutableListOf<DriveEntry>()
+        DriveRepository(FakeApi(mapOf("root" to emptyList())))
+            .walkStreaming("root")
+            .collect { streamed += it.files }
+
+        assertThat(streamed).isEmpty()
     }
 }

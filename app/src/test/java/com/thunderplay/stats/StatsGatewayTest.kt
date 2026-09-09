@@ -63,16 +63,86 @@ class LocalStatsGatewayTest {
                 .copy(playCount = playCount, lastPlayedAt = lastPlayedAt)
         }
 
-        override fun observeTracks(category: String?, likedOnly: Boolean, query: String) =
-            flowOf(rows.values.toList())
+        override fun observeTracks(
+            category: String?,
+            level: String?,
+            minStars: Int?,
+            query: String,
+        ) = flowOf(rows.values.toList())
 
         override fun observeAll(): Flow<List<TrackEntity>> = flowOf(rows.values.toList())
         override fun observeCategories(): Flow<List<String>> =
             flowOf(rows.values.map { it.category }.distinct())
 
-        override suspend fun allActive() = rows.values.toList()
-        override suspend fun upsertAll(tracks: List<TrackEntity>) {
-            tracks.forEach { rows[it.driveId] = it }
+        override fun observeLevels(): Flow<List<String>> =
+            flowOf(rows.values.mapNotNull { it.level }.distinct())
+
+        override fun observeUnjudged(): Flow<List<TrackEntity>> =
+            flowOf(rows.values.filter { it.abVerdict == null })
+
+        override fun observeJudged(): Flow<List<TrackEntity>> =
+            flowOf(rows.values.filter { it.abVerdict != null })
+
+        override suspend fun applyAbVerdict(
+            driveId: String,
+            verdict: String,
+            judgedAt: Long,
+            winnerDriveId: String,
+            prompt: String?,
+        ) {
+            rows[driveId] = rows.getValue(driveId).copy(
+                abVerdict = verdict,
+                abJudgedAt = judgedAt,
+                abWinnerDriveId = winnerDriveId,
+                abPrompt = prompt ?: rows.getValue(driveId).abPrompt,
+            )
+        }
+
+        override suspend fun clearAbVerdict(driveId: String) {
+            rows[driveId] = rows.getValue(driveId)
+                .copy(abVerdict = null, abJudgedAt = null, abWinnerDriveId = null)
+        }
+
+        override suspend fun allActive() = rows.values.filter { it.abVerdict == null }
+        override suspend fun insertIfNew(tracks: List<TrackEntity>): List<Long> =
+            tracks.map { if (rows.putIfAbsent(it.driveId, it) == null) 1L else -1L }
+
+        override suspend fun updateCatalogFields(
+            driveId: String,
+            title: String,
+            relativePath: String,
+            category: String,
+            level: String?,
+            sizeBytes: Long?,
+            md5Checksum: String?,
+            modifiedAt: Long?,
+            clearAbVerdict: Boolean,
+        ) {
+            val existing = rows.getValue(driveId)
+            rows[driveId] = existing.copy(
+                title = title,
+                relativePath = relativePath,
+                category = category,
+                level = level,
+                sizeBytes = sizeBytes,
+                md5Checksum = md5Checksum,
+                modifiedAt = modifiedAt,
+                trashedAt = null,
+                abVerdict = if (clearAbVerdict) null else existing.abVerdict,
+                abJudgedAt = if (clearAbVerdict) null else existing.abJudgedAt,
+                abWinnerDriveId = if (clearAbVerdict) null else existing.abWinnerDriveId,
+            )
+        }
+
+        override suspend fun applySource(
+            driveId: String,
+            sourceWavDriveId: String,
+            addedAt: Long?,
+        ) {
+            rows[driveId] = rows.getValue(driveId).copy(
+                sourceWavDriveId = sourceWavDriveId,
+                addedAt = addedAt ?: rows.getValue(driveId).addedAt,
+            )
         }
 
         override suspend fun deleteByIds(driveIds: List<String>) {
@@ -165,4 +235,39 @@ class LocalStatsGatewayTest {
 
     @Suppress("unused")
     private fun unusedRollup() = PlayRollupEntity("id", "t1", 0, 0, false)
+
+    @Test
+    fun `refreshing the catalog does not wipe ratings or play counts`() = runTest {
+        // A plain upsert replaces the whole row, so a refresh used to reset every rating and
+        // play count to zero. Drive owns the catalog fields; the app owns the stats.
+        val dao = FakeTrackDao(listOf(track(rating = 5).copy(playCount = 12, lastPlayedAt = 99)))
+        val fromDrive = track().copy(title = "renamed-on-drive", sizeBytes = 4242)
+
+        dao.upsertAll(listOf(fromDrive))
+
+        val row = dao.rows.getValue("t1")
+        assertThat(row.title).isEqualTo("renamed-on-drive")
+        assertThat(row.sizeBytes).isEqualTo(4242)
+        assertThat(row.rating).isEqualTo(5)
+        assertThat(row.playCount).isEqualTo(12)
+        assertThat(row.lastPlayedAt).isEqualTo(99)
+    }
+
+    @Test
+    fun `a track reappearing in Drive is no longer marked trashed`() = runTest {
+        val dao = FakeTrackDao(listOf(track().copy(trashedAt = 1_000)))
+        dao.upsertAll(listOf(track()))
+        assertThat(dao.rows.getValue("t1").trashedAt).isNull()
+    }
+
+    @Test
+    fun `deleteMissing removes only what Drive no longer has, and counts it`() = runTest {
+        val dao = FakeTrackDao(
+            listOf(track(), track().copy(driveId = "t2"), track().copy(driveId = "t3")),
+        )
+        val removed = dao.deleteMissing(listOf("t1", "t3"))
+
+        assertThat(removed).isEqualTo(1)
+        assertThat(dao.rows.keys).containsExactly("t1", "t3")
+    }
 }

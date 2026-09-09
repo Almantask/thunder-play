@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Close
@@ -30,7 +31,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Downloading
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OfflinePin
@@ -38,8 +38,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.SyncAlt
-import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -58,6 +58,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import com.thunderplay.ui.player.StarRating
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -67,6 +68,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -121,8 +123,13 @@ fun LibraryScreen(viewModel: LibraryViewModel = hiltViewModel()) {
             }
 
             is RefreshState.Done -> {
-                val pending = outcome.result.awaitingTranscode
-                val suffix = if (pending > 0) " ($pending awaiting transcode)" else ""
+                val extras = buildList {
+                    if (outcome.result.awaitingTranscode > 0) {
+                        add("${outcome.result.awaitingTranscode} awaiting transcode")
+                    }
+                    if (outcome.result.removed > 0) add("${outcome.result.removed} removed")
+                }
+                val suffix = if (extras.isEmpty()) "" else " (" + extras.joinToString(", ") + ")"
                 snackbars.showSnackbar("${outcome.result.tracks} tracks" + suffix)
                 viewModel.dismissRefreshStatus()
             }
@@ -145,7 +152,6 @@ fun LibraryScreen(viewModel: LibraryViewModel = hiltViewModel()) {
             onPrevious = viewModel.player::previous,
             onSeek = viewModel.player::seekTo,
             onRate = { rating -> nowPlaying.mediaId?.let { viewModel.setRating(it, rating) } },
-            onToggleLike = { nowPlaying.mediaId?.let { viewModel.toggleLike(it) } },
         )
         return
     }
@@ -224,7 +230,6 @@ fun LibraryScreen(viewModel: LibraryViewModel = hiltViewModel()) {
                     IconButton(onClick = { searching = !searching }) {
                         Icon(Icons.Default.Search, contentDescription = "Search")
                     }
-                    OrderMenu(state.view.order, viewModel::setOrder)
                     IconButton(onClick = viewModel::shuffleAndPlay) {
                         Icon(Icons.Default.Shuffle, contentDescription = "Shuffle and play")
                     }
@@ -237,9 +242,9 @@ fun LibraryScreen(viewModel: LibraryViewModel = hiltViewModel()) {
                     )
                     IconButton(
                         onClick = viewModel::refresh,
-                        enabled = state.refresh != RefreshState.Running,
+                        enabled = state.refresh !is RefreshState.Running,
                     ) {
-                        if (state.refresh == RefreshState.Running) {
+                        if (state.refresh is RefreshState.Running) {
                             CircularProgressIndicator(Modifier.padding(4.dp), strokeWidth = 2.dp)
                         } else {
                             Icon(Icons.Outlined.Refresh, contentDescription = "Refresh")
@@ -281,12 +286,15 @@ fun LibraryScreen(viewModel: LibraryViewModel = hiltViewModel()) {
                 )
             }
 
-            ScopeChips(
-                scope = state.view.scope,
-                likedOnly = state.view.likedOnly,
+            FilterBar(
+                view = state.view,
                 categories = state.categories,
-                onScope = viewModel::setScope,
-                onToggleLiked = viewModel::toggleLikedOnly,
+                levels = state.levels,
+                onStars = viewModel::setStars,
+                onCategory = viewModel::setCategory,
+                onLevel = viewModel::setLevel,
+                onOrder = viewModel::setOrder,
+                onClear = viewModel::clearFilters,
             )
 
             when {
@@ -296,8 +304,28 @@ fun LibraryScreen(viewModel: LibraryViewModel = hiltViewModel()) {
                         "library folder with that service account as Editor. See docs/SETUP.md.",
                 )
 
-                state.isEmpty && state.refresh == RefreshState.Running ->
-                    Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }
+                state.isEmpty && state.refresh is RefreshState.Running ->
+                    Column(
+                        Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(
+                            12.dp,
+                            Alignment.CenterVertically,
+                        ),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        CircularProgressIndicator()
+                        Text(
+                            (state.refresh as RefreshState.Running).label,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+
+                // An empty library and an over-narrow filter look identical, so say which it is.
+                state.isEmpty && state.libraryTotal > 0 -> Guidance(
+                    title = "Nothing matches",
+                    body = "No track is in all of these filters at once. Widen one of them, " +
+                        "empty the search box, or tap Clear to see the whole library again.",
+                )
 
                 state.isEmpty -> Guidance(
                     title = "Nothing here yet",
@@ -307,7 +335,8 @@ fun LibraryScreen(viewModel: LibraryViewModel = hiltViewModel()) {
 
                 else -> {
                     Text(
-                        "${state.tracks.size} tracks - ${state.downloadedCount} downloaded",
+                        (state.refresh as? RefreshState.Running)?.label
+                            ?: "${state.tracks.size} tracks - ${state.downloadedCount} downloaded",
                         style = MaterialTheme.typography.labelMedium,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                     )
@@ -316,7 +345,7 @@ fun LibraryScreen(viewModel: LibraryViewModel = hiltViewModel()) {
                         playingId = nowPlaying.mediaId,
                         onPlay = viewModel::play,
                         onToggleSelect = viewModel::toggleSelection,
-                        onToggleLike = viewModel::toggleLike,
+                        onRate = viewModel::setRating,
                         onDownload = viewModel::download,
                         onRemoveDownload = viewModel::removeDownload,
                         onShare = viewModel::shareTrack,
@@ -329,10 +358,14 @@ fun LibraryScreen(viewModel: LibraryViewModel = hiltViewModel()) {
     }
 }
 
-private fun defaultShareName(view: LibraryView): String = when (val scope = view.scope) {
-    is LibraryView.Scope.Category -> scope.name
-    LibraryView.Scope.Liked -> "Liked tracks"
-    LibraryView.Scope.All -> if (view.likedOnly) "Liked tracks" else "Thunder Play selection"
+/** Names the share after whatever is filtered, so "Beast Hunt - III - 4+ stars" needs no typing. */
+private fun defaultShareName(view: LibraryView): String {
+    val parts = listOfNotNull(
+        view.category,
+        view.level,
+        view.stars.takeIf { it != LibraryView.Stars.Any }?.label(),
+    )
+    return if (parts.isEmpty()) "Thunder Play selection" else parts.joinToString(" - ")
 }
 
 @Composable
@@ -341,7 +374,7 @@ private fun TrackList(
     playingId: String?,
     onPlay: (Int) -> Unit,
     onToggleSelect: (String) -> Unit,
-    onToggleLike: (String) -> Unit,
+    onRate: (String, Int) -> Unit,
     onDownload: (TrackEntity) -> Unit,
     onRemoveDownload: (String) -> Unit,
     onShare: (TrackEntity) -> Unit,
@@ -360,7 +393,7 @@ private fun TrackList(
                 selected = state.isSelected(track.driveId),
                 onToggleSelect = { onToggleSelect(track.driveId) },
                 onPlay = { onPlay(index) },
-                onToggleLike = { onToggleLike(track.driveId) },
+                onRate = { rating -> onRate(track.driveId, rating) },
                 onDownload = { onDownload(track) },
                 onRemoveDownload = { onRemoveDownload(track.driveId) },
                 onShare = { onShare(track) },
@@ -382,7 +415,7 @@ private fun TrackRow(
     selected: Boolean,
     onToggleSelect: () -> Unit,
     onPlay: () -> Unit,
-    onToggleLike: () -> Unit,
+    onRate: (Int) -> Unit,
     onDownload: () -> Unit,
     onRemoveDownload: () -> Unit,
     onShare: () -> Unit,
@@ -425,7 +458,16 @@ private fun TrackRow(
         },
         supportingContent = {
             val level = track.level?.let { " / " + it }.orEmpty()
-            Text(track.category + level, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Column {
+                Text(track.category + level, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                StarRating(
+                    rating = track.rating,
+                    onRate = onRate,
+                    starSize = 28.dp,
+                    iconSize = 18.dp,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
         },
         leadingContent = {
             if (selectionMode) {
@@ -441,16 +483,6 @@ private fun TrackRow(
                         track.playCount.toString(),
                         style = MaterialTheme.typography.labelMedium,
                         modifier = Modifier.padding(end = 4.dp),
-                    )
-                }
-                IconButton(onClick = onToggleLike) {
-                    Icon(
-                        if (track.isLiked) {
-                            Icons.Default.Favorite
-                        } else {
-                            Icons.Outlined.FavoriteBorder
-                        },
-                        contentDescription = if (track.isLiked) "Unlike" else "Like",
                     )
                 }
                 Box {
@@ -693,13 +725,23 @@ private fun LocalStateIcon(local: LocalState) {
     Icon(icon, contentDescription = description, modifier = Modifier.size(20.dp))
 }
 
+/**
+ * The three filters and the sort order, as one scrolling row of dropdowns.
+ *
+ * The filters are ANDed by the query behind them, so each chip narrows what the previous ones
+ * left. Every chip shows its current value rather than its name - on a phone there is no room for
+ * both, and the value is the part that changes.
+ */
 @Composable
-private fun ScopeChips(
-    scope: LibraryView.Scope,
-    likedOnly: Boolean,
+private fun FilterBar(
+    view: LibraryView,
     categories: List<String>,
-    onScope: (LibraryView.Scope) -> Unit,
-    onToggleLiked: () -> Unit,
+    levels: List<String>,
+    onStars: (LibraryView.Stars) -> Unit,
+    onCategory: (String?) -> Unit,
+    onLevel: (String?) -> Unit,
+    onOrder: (LibraryView.Order) -> Unit,
+    onClear: () -> Unit,
 ) {
     Row(
         Modifier
@@ -707,39 +749,134 @@ private fun ScopeChips(
             .horizontalScroll(rememberScrollState())
             .padding(horizontal = 12.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        FilterChip(
-            selected = scope is LibraryView.Scope.All,
-            onClick = { onScope(LibraryView.Scope.All) },
-            label = { Text("All") },
-        )
-        FilterChip(
-            selected = scope is LibraryView.Scope.Liked,
-            onClick = { onScope(LibraryView.Scope.Liked) },
-            label = { Text("Liked") },
-        )
-        categories.forEach { category ->
-            FilterChip(
-                selected = (scope as? LibraryView.Scope.Category)?.name == category,
-                onClick = { onScope(LibraryView.Scope.Category(category)) },
-                label = { Text(category) },
-            )
+        FilterDropdown(
+            label = view.stars.label(),
+            active = view.stars != LibraryView.Stars.Any,
+        ) { dismiss ->
+            LibraryView.Stars.entries.forEach { stars ->
+                PickerItem(stars.label(), selected = stars == view.stars) {
+                    onStars(stars)
+                    dismiss()
+                }
+            }
         }
-        // Redundant under the Liked scope, which already implies it.
-        if (scope !is LibraryView.Scope.Liked) {
-            FilterChip(
-                selected = likedOnly,
-                onClick = onToggleLiked,
-                label = { Text("Liked only") },
+
+        FilterDropdown(
+            label = view.category ?: ALL_CATEGORIES,
+            active = view.category != null,
+        ) { dismiss ->
+            PickerItem(ALL_CATEGORIES, selected = view.category == null) {
+                onCategory(null)
+                dismiss()
+            }
+            categories.forEach { category ->
+                PickerItem(category, selected = category == view.category) {
+                    onCategory(category)
+                    dismiss()
+                }
+            }
+        }
+
+        // A library with no sub-folders has no intensities to pick between; the chip would be a
+        // dropdown with one entry. It still shows while a stale level is filtering, so it can be
+        // undone from the chip itself rather than only through Clear.
+        if (levels.isNotEmpty() || view.level != null) {
+            FilterDropdown(
+                label = view.level ?: ALL_LEVELS,
+                active = view.level != null,
+            ) { dismiss ->
+                PickerItem(ALL_LEVELS, selected = view.level == null) {
+                    onLevel(null)
+                    dismiss()
+                }
+                levels.forEach { level ->
+                    PickerItem(level, selected = level == view.level) {
+                        onLevel(level)
+                        dismiss()
+                    }
+                }
+            }
+        }
+
+        FilterDropdown(
+            label = view.order.label(),
+            active = false,
+            leadingIcon = Icons.Default.Sort,
+        ) { dismiss ->
+            LibraryView.Order.entries.forEach { order ->
+                PickerItem(order.label(), selected = order == view.order) {
+                    onOrder(order)
+                    dismiss()
+                }
+            }
+        }
+
+        // Only worth the width once something is actually hidden.
+        if (view.isFiltered) {
+            AssistChip(
+                onClick = onClear,
+                label = { Text("Clear") },
                 leadingIcon = {
                     Icon(
-                        if (likedOnly) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
+                        Icons.Default.Close,
                         contentDescription = null,
+                        modifier = Modifier.size(18.dp),
                     )
                 },
             )
         }
     }
+}
+
+private const val ALL_CATEGORIES = "All categories"
+private const val ALL_LEVELS = "All intensities"
+
+/** A chip that opens its choices as a menu; three of these fit where three text fields would not. */
+@Composable
+private fun FilterDropdown(
+    label: String,
+    active: Boolean,
+    leadingIcon: ImageVector? = null,
+    content: @Composable (dismiss: () -> Unit) -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        FilterChip(
+            selected = active,
+            onClick = { open = true },
+            label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            leadingIcon = leadingIcon?.let {
+                {
+                    Icon(it, contentDescription = null, modifier = Modifier.size(18.dp))
+                }
+            },
+            trailingIcon = {
+                Icon(
+                    Icons.Default.ArrowDropDown,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+            },
+        )
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            content { open = false }
+        }
+    }
+}
+
+@Composable
+private fun PickerItem(label: String, selected: Boolean, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(label) },
+        onClick = onClick,
+        trailingIcon = if (selected) {
+            { Icon(Icons.Default.Check, contentDescription = "Selected") }
+        } else {
+            null
+        },
+    )
 }
 
 @Composable
@@ -794,38 +931,20 @@ private fun ViewMenu(
     }
 }
 
-@Composable
-private fun OrderMenu(current: LibraryView.Order, onPick: (LibraryView.Order) -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        IconButton(onClick = { open = true }) {
-            Icon(Icons.Default.Sort, contentDescription = "Sort order")
-        }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            LibraryView.Order.entries.forEach { order ->
-                DropdownMenuItem(
-                    text = { Text(order.label()) },
-                    onClick = {
-                        onPick(order)
-                        open = false
-                    },
-                    trailingIcon = if (order == current) {
-                        { Icon(Icons.Default.Check, contentDescription = "Selected") }
-                    } else {
-                        null
-                    },
-                )
-            }
-        }
-    }
-}
-
 private fun LibraryView.Order.label(): String = when (this) {
-    LibraryView.Order.Name -> "Name"
+    LibraryView.Order.Name -> "A to Z"
+    LibraryView.Order.RecentlyAdded -> "Recently added"
     LibraryView.Order.MostPlayed -> "Most played"
     LibraryView.Order.HighestRated -> "Highest rated"
-    LibraryView.Order.RecentlyAdded -> "Recently added"
     LibraryView.Order.Random -> "Random"
+}
+
+/** "5+" would be a lie, and "0+ stars" would match everything, so those two read differently. */
+private fun LibraryView.Stars.label(): String = when (this) {
+    LibraryView.Stars.Any -> "Any rating"
+    LibraryView.Stars.Unrated -> "Unrated"
+    LibraryView.Stars.Five -> "5 stars"
+    else -> "${minimum}+ stars"
 }
 
 @Composable

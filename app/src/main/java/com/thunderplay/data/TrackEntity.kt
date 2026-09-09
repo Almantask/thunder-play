@@ -45,6 +45,20 @@ data class TrackEntity(
 
     /** Set when the track has been moved to the Drive trash folder. */
     val trashedAt: Long? = null,
+
+    // --- A/B judging ---
+    /**
+     * "good" or "bad" once this cue's takes have been judged; null while it is still a candidate.
+     *
+     * Kept as a plain String and mapped in Kotlin by `AbVerdict.from`. A Room TypeConverter would
+     * have to be registered on the database and would then apply to every entity, for no gain.
+     */
+    val abVerdict: String? = null,
+    val abJudgedAt: Long? = null,
+    /** Drive id of the take that won, recorded on the winner and the also-rans alike. */
+    val abWinnerDriveId: String? = null,
+    /** INAM from the source WAV, captured at judging time so the batch stays readable later. */
+    val abPrompt: String? = null,
 ) {
     val isLiked: Boolean get() = rating >= 1
 }

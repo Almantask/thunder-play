@@ -6,36 +6,45 @@ import kotlin.random.Random
 /**
  * What the library list is currently showing.
  *
- * "Liked" is both a scope of its own and a toggle that combines with a real category, so both
- * "everything I like" and "Beast Hunt, but only the ones I like" are expressible.
+ * The three filters are independent and combine with AND, so "Beast Hunt, level III, three stars
+ * or better" is a single state rather than a mode you have to switch between. Each one has a
+ * neutral value - [Stars.Any], and null for the two folder filters - meaning "no restriction".
  */
 data class LibraryView(
-    val scope: Scope = Scope.All,
-    val likedOnly: Boolean = false,
+    val stars: Stars = Stars.Any,
+    /** Category to restrict to; null means every category. */
+    val category: String? = null,
+    /** Intensity level (the folder inside the category) to restrict to; null means every level. */
+    val level: String? = null,
     val order: Order = Order.Name,
     val query: String = "",
     /** Fixed for the life of a shuffle so the list does not reorder as you scroll. */
     val shuffleSeed: Long = 0L,
 ) {
-    sealed interface Scope {
-        data object All : Scope
-        data object Liked : Scope
-        data class Category(val name: String) : Scope
+    /**
+     * The star filter, as the single value its dropdown carries.
+     *
+     * [Unrated] is "exactly none" rather than "at least none": picking zero stars is how you find
+     * the tracks you have not judged yet, which a plain minimum of zero could not express - that
+     * would just be [Any] again.
+     */
+    enum class Stars(val minimum: Int?) {
+        Any(null),
+        Unrated(0),
+        One(1),
+        Two(2),
+        Three(3),
+        Four(4),
+        Five(5),
     }
 
-    enum class Order { Name, MostPlayed, HighestRated, RecentlyAdded, Random }
+    enum class Order { Name, RecentlyAdded, MostPlayed, HighestRated, Random }
 
-    /** The category to filter on in SQL; null means "no category restriction". */
-    val categoryFilter: String? get() = (scope as? Scope.Category)?.name
+    /** True when the dropdowns are hiding part of the library, which is what Clear undoes. */
+    val isFiltered: Boolean
+        get() = stars != Stars.Any || category != null || level != null
 
-    /** Liked scope implies the toggle, which is why the chip is hidden in that mode. */
-    val effectiveLikedOnly: Boolean get() = likedOnly || scope is Scope.Liked
-
-    fun withScope(next: Scope) = copy(
-        scope = next,
-        // The toggle is meaningless under the Liked scope; clear it so returning to All is clean.
-        likedOnly = if (next is Scope.Liked) false else likedOnly,
-    )
+    fun cleared() = copy(stars = Stars.Any, category = null, level = null)
 
     fun reshuffled(seed: Long = Random.nextLong()) = copy(order = Order.Random, shuffleSeed = seed)
 }

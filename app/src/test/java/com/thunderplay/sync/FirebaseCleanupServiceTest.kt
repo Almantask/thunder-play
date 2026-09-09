@@ -48,6 +48,20 @@ class FirebaseCleanupServiceTest {
     }
 
     @Test
+    fun `a judged track is not an orphan`() = runTest {
+        // cleanupOrphans walks _ThunderPlayAB/ alongside the catalog root and _ThunderPlayTrash/, so
+        // its ids arrive here. Without that whitelist the weekly job would purge the ratings and
+        // play history of everything ever judged.
+        val orphans = service.findConfirmedOrphans(
+            driveFileIds = setOf("in-library", "kept", "set-aside"),
+            firebaseTrackIds = listOf("in-library", "kept", "set-aside", "really-gone"),
+            checkExistsInDrive = { false },
+        )
+
+        assertThat(orphans).containsExactly("really-gone")
+    }
+
+    @Test
     fun `when all Firebase tracks exist in Drive, no orphans are reported`() = runTest {
         val driveIds = setOf("track-1", "track-2", "track-3")
         val firebaseIds = listOf("track-1", "track-2")

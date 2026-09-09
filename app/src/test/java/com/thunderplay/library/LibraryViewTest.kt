@@ -84,25 +84,59 @@ class LibraryViewTest {
     }
 
     @Test
-    fun `liked scope implies the liked filter`() {
-        val view = LibraryView().withScope(LibraryView.Scope.Liked)
-        assertThat(view.effectiveLikedOnly).isTrue()
-        assertThat(view.categoryFilter).isNull()
+    fun `an untouched view restricts nothing`() {
+        val view = LibraryView()
+        assertThat(view.isFiltered).isFalse()
+        assertThat(view.stars.minimum).isNull()
+        assertThat(view.category).isNull()
+        assertThat(view.level).isNull()
     }
 
     @Test
-    fun `a category can be combined with the liked toggle`() {
-        val view = LibraryView(likedOnly = true)
-            .withScope(LibraryView.Scope.Category("Beast Hunt"))
-        assertThat(view.categoryFilter).isEqualTo("Beast Hunt")
-        assertThat(view.effectiveLikedOnly).isTrue()
+    fun `the three filters are independent`() {
+        val view = LibraryView(
+            stars = LibraryView.Stars.Three,
+            category = "Beast Hunt",
+            level = "III",
+        )
+        assertThat(view.stars.minimum).isEqualTo(3)
+        assertThat(view.category).isEqualTo("Beast Hunt")
+        assertThat(view.level).isEqualTo("III")
+        assertThat(view.isFiltered).isTrue()
     }
 
     @Test
-    fun `switching to the liked scope clears the now-redundant toggle`() {
-        val view = LibraryView(likedOnly = true).withScope(LibraryView.Scope.Liked)
-        assertThat(view.likedOnly).isFalse()
-        assertThat(view.effectiveLikedOnly).isTrue()
+    fun `zero stars asks for unrated rather than for everything`() {
+        // The query reads a minimum of 0 as "exactly none"; Any is what means "no restriction".
+        assertThat(LibraryView.Stars.Unrated.minimum).isEqualTo(0)
+        assertThat(LibraryView.Stars.Any.minimum).isNull()
+    }
+
+    @Test
+    fun `each star step is its own minimum`() {
+        assertThat(LibraryView.Stars.entries.mapNotNull { it.minimum })
+            .containsExactly(0, 1, 2, 3, 4, 5).inOrder()
+    }
+
+    @Test
+    fun `clearing drops the filters but keeps the sort and the search`() {
+        val view = LibraryView(
+            stars = LibraryView.Stars.Five,
+            category = "Beast Hunt",
+            level = "I",
+            order = LibraryView.Order.RecentlyAdded,
+            query = "storm",
+        ).cleared()
+
+        assertThat(view.isFiltered).isFalse()
+        assertThat(view.order).isEqualTo(LibraryView.Order.RecentlyAdded)
+        assertThat(view.query).isEqualTo("storm")
+    }
+
+    @Test
+    fun `the search box alone does not count as a filter`() {
+        // Clear only resets the dropdowns, so a typed query must not keep the chip on screen.
+        assertThat(LibraryView(query = "storm").isFiltered).isFalse()
     }
 
     @Test

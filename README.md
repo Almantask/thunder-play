@@ -4,8 +4,12 @@ An Android music player for a personal library that lives in Google Drive, plus 
 player so a playlist can be handed to anyone with a phone browser. No server, and nothing here
 leaves the free tiers.
 
-**Start with [docs/SETUP.md](docs/SETUP.md)** — the app needs a service-account key and a
-transcode pass before it can show anything.
+**Start with [docs/SETUP.md](docs/SETUP.md)** — the app needs a service-account key before it can
+show anything.
+
+The catalog is the WAV tree in `music\`. `tools/transcode/` can mirror it to smaller AAC in
+`music-mobile\`, and Settings can point the app there instead, but nothing maintains that mirror
+and the app does not need it.
 
 ## What it does
 
@@ -24,6 +28,11 @@ transcode pass before it can show anything.
   filtered view* as a link that streams in any browser. Every link expires after 7 days.
 - **Deletes safely.** Removing a track from Drive moves it — and its source WAV — into
   `_ThunderPlayTrash\`. Nothing is ever permanently deleted.
+- **Judges rival takes.** Switch on *A/B testing* in Settings for a tab that groups the two to
+  four renders of one cue, plays them without crossfading, and files the keeper into
+  `_ThunderPlayAB\good\` with the rest in `_ThunderPlayAB\bad\`. The prompt is read out of the
+  source WAV's RIFF tags and written onto each judged file's Drive description, so both batches
+  stay readable. Winners stay in the library; nothing is deleted.
 
 ## Layout
 

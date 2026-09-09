@@ -1,6 +1,6 @@
 ---
 name: publish-apk
-description: Build the Thunder Play debug APK and publish it to the Google Drive _apk folder so it can be downloaded and installed on the phone. Use this as the FINAL step of any task that changed app code, and whenever the user says "ship it", "publish the build", "put it on my phone", "make me an APK", "I want to test this", or otherwise signals they want to try the change on a real device. Do not run it mid-task or after documentation-only changes.
+description: Build and prepare the Thunder Play debug APK and publish it to the Google Drive _apk folder so it can be downloaded and installed on the phone. Use this when preparing a build or as the FINAL step of any task that changed app code, and whenever the user says "ship it", "prepare a build", "publish the build", "put it on my phone", "make me an APK", "I want to test this", or otherwise signals they want to try the change on a real device. Do not run it mid-task or after documentation-only changes.
 ---
 
 # Publishing a build to the phone

@@ -19,15 +19,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.ui.unit.Dp
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -124,7 +123,6 @@ fun NowPlayingScreen(
     onPrevious: () -> Unit,
     onSeek: (Float) -> Unit,
     onRate: (Int) -> Unit,
-    onToggleLike: () -> Unit,
 ) {
     // While dragging, follow the finger rather than the player, or the thumb fights the ticker.
     var scrubbing by remember { mutableStateOf<Float?>(null) }
@@ -182,12 +180,6 @@ fun NowPlayingScreen(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onToggleLike) {
-                Icon(
-                    if (rating >= 1) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
-                    contentDescription = if (rating >= 1) "Unlike" else "Like",
-                )
-            }
             IconButton(onClick = onPrevious, enabled = state.hasPrevious) {
                 Icon(
                     Icons.Default.SkipPrevious,
@@ -209,7 +201,6 @@ fun NowPlayingScreen(
                     modifier = Modifier.size(36.dp),
                 )
             }
-            Spacer(Modifier.size(48.dp))
         }
 
         Spacer(Modifier.weight(1f))
@@ -305,18 +296,24 @@ private fun formatDate(epochMs: Long): String =
     SimpleDateFormat("d MMM yyyy", Locale.getDefault()).format(Date(epochMs))
 
 @Composable
-fun StarRating(rating: Int, onRate: (Int) -> Unit, modifier: Modifier = Modifier) {
+fun StarRating(
+    rating: Int,
+    onRate: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    starSize: Dp = 32.dp,
+    iconSize: Dp = 20.dp,
+) {
     Row(modifier) {
         (1..5).forEach { star ->
             IconButton(
                 // Tapping the current rating clears it, which is the usual way to un-rate.
                 onClick = { onRate(if (rating == star) 0 else star) },
-                modifier = Modifier.size(32.dp),
+                modifier = Modifier.size(starSize),
             ) {
                 Icon(
                     if (star <= rating) Icons.Default.Star else Icons.Outlined.StarBorder,
                     contentDescription = "$star star",
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(iconSize),
                 )
             }
         }

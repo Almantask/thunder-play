@@ -49,14 +49,42 @@ data class AppSettings(
     val syncOnWifiOnly: Boolean = true,
     val syncOnlyWhenCharging: Boolean = false,
     val crossfadeMs: Int = DEFAULT_CROSSFADE_MS,
+    val abTestingEnabled: Boolean = false,
 ) {
     companion object {
-        const val DEFAULT_SOURCE_ROOT = "music-mobile"
-        const val WAV_SOURCE_ROOT = "music"
+        /**
+         * The tree the catalog walks.
+         *
+         * The library is WAV-only: nothing maintains the AAC mirror, so `music-mobile/` does not
+         * exist and pointing at it would leave the app with an empty catalog.
+         */
+        const val DEFAULT_SOURCE_ROOT = "music"
+
+        /**
+         * The optional AAC mirror from tools/transcode.
+         *
+         * Still selectable in Settings for anyone who runs the script, but not the default and not
+         * generated any more. When it *is* selected the refresher does a second pass to pair each
+         * .m4a with the .wav it came from; walking the WAVs directly makes every track its own
+         * source and skips that entirely.
+         */
+        const val TRANSCODED_SOURCE_ROOT = "music-mobile"
         const val LIBRARY_FOLDER_NAME = "Music-And-Fx-Generated-Library"
         const val TRASH_FOLDER_NAME = "_ThunderPlayTrash"
         const val DEFAULT_CROSSFADE_MS = 3_000
         const val MAX_CROSSFADE_MS = 12_000
+
+        /**
+         * Where judged takes are filed.
+         *
+         * A sibling of the library root, never a child of it: created inside `music/` it would
+         * fall within the main walk, and every refresh would quietly un-judge the whole batch.
+         * Each batch keeps the category folders, so the winners' tree stays walkable and both
+         * batches stay browsable on the PC.
+         */
+        const val AB_FOLDER_NAME = "_ThunderPlayAB"
+        const val AB_GOOD_FOLDER_NAME = "good"
+        const val AB_BAD_FOLDER_NAME = "bad"
     }
 }
 
@@ -74,6 +102,7 @@ class SettingsRepository @Inject constructor(
         val WIFI_ONLY = booleanPreferencesKey("sync_wifi_only")
         val CHARGING_ONLY = booleanPreferencesKey("sync_charging_only")
         val CROSSFADE_MS = intPreferencesKey("crossfade_ms")
+        val AB_TESTING = booleanPreferencesKey("ab_testing_enabled")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
@@ -90,6 +119,7 @@ class SettingsRepository @Inject constructor(
             syncOnWifiOnly = prefs[Keys.WIFI_ONLY] ?: defaults.syncOnWifiOnly,
             syncOnlyWhenCharging = prefs[Keys.CHARGING_ONLY] ?: defaults.syncOnlyWhenCharging,
             crossfadeMs = prefs[Keys.CROSSFADE_MS] ?: defaults.crossfadeMs,
+            abTestingEnabled = prefs[Keys.AB_TESTING] ?: defaults.abTestingEnabled,
         )
     }
 
@@ -106,6 +136,7 @@ class SettingsRepository @Inject constructor(
     suspend fun setCrossfadeMs(ms: Int) = edit {
         it[Keys.CROSSFADE_MS] = ms.coerceIn(0, AppSettings.MAX_CROSSFADE_MS)
     }
+    suspend fun setAbTestingEnabled(on: Boolean) = edit { it[Keys.AB_TESTING] = on }
 
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         context.dataStore.edit(block)

@@ -12,7 +12,20 @@
           "package_name": "com.thunderplay"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "41460511094-icacpaqc55rlpi7piknoe30dl0d2ll7q.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.thunderplay",
+            "certificate_hash": "aa447013b6367f3f9c3acd7ab36fc662c50ae6e2"
+          }
+        },
+        {
+          "client_id": "41460511094-897hudvk22h89the196gq2am5jtnn2gd.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyBRwBBA7Cpgj8-t3PVaydDxNTlrrYEp5zI"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "41460511094-897hudvk22h89the196gq2am5jtnn2gd.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

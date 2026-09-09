@@ -62,10 +62,7 @@ class ShareService @Inject constructor(
         // The Storage rules require an authenticated caller. Proceeding without checking turns a
         // setup problem into an opaque "permission denied" halfway through the upload.
         if (!stats.ensureSignedIn()) {
-            throw ShareUnavailable(
-                "Could not sign in to Firebase. Enable Anonymous authentication in the Firebase " +
-                    "console (Build > Authentication > Sign-in method), then try again.",
-            )
+            throw ShareUnavailable("Could not connect to Firebase. Please check your network connection.")
         }
 
         val shareId = newShareId()
@@ -167,23 +164,25 @@ class ShareService @Inject constructor(
         }.getOrDefault(emptyList())
 
     private suspend fun uploadTrack(track: TrackEntity, path: String) {
-        // No existence probe first. Each share gets a fresh id, so the object never exists yet:
-        // the probe was a guaranteed-to-fail round trip per track whose "Object does not exist at
-        // location" error surfaced to the user as the reason the whole share failed. putStream
-        // overwrites anyway, so asking first bought nothing.
         val ref = storage.reference.child(path)
         try {
             val body = driveApi.download(track.driveId)
-            body.byteStream().use { stream -> ref.putStream(stream).await() }
+            val metadata = com.google.firebase.storage.StorageMetadata.Builder()
+                .setContentType("audio/mp4")
+                .build()
+            body.byteStream().use { stream -> ref.putStream(stream, metadata).await() }
         } catch (e: Exception) {
-            // Name the track, and translate the two failures that actually happen in practice -
+            // Name the track, and translate the failures that actually happen in practice -
             // otherwise a rules or billing problem reads as a mysterious upload error.
             val hint = when {
                 e.message?.contains("not have permission", ignoreCase = true) == true ||
                     e.message?.contains("unauthorized", ignoreCase = true) == true ->
                     " - deploy the Storage rules: npx firebase-tools deploy --only storage"
 
-                e.message?.contains("does not exist", ignoreCase = true) == true ->
+                e.message?.contains("does not exist", ignoreCase = true) == true ||
+                    e.message?.contains("not found", ignoreCase = true) == true ||
+                    (e is com.google.firebase.storage.StorageException &&
+                        e.errorCode == com.google.firebase.storage.StorageException.ERROR_OBJECT_NOT_FOUND) ->
                     " - the Storage bucket is not set up yet; see docs/SETUP.md step 5"
 
                 else -> ""

@@ -28,6 +28,7 @@ data class SettingsUiState(
     val cacheBytes: Long = 0,
     val driveConfigured: Boolean = false,
     val firebaseConfigured: Boolean = false,
+    val accountEmail: String? = null,
     val diagnosticsStatus: String? = null,
     /** Non-null while the log is being shown, so it can be read without a cable. */
     val logText: String? = null,
@@ -64,13 +65,15 @@ class SettingsViewModel @Inject constructor(
             settings.settings,
             cacheBytes,
             diagnosticsStatus,
+            firestore.userEmail,
             combine(logText, pendingShare, ::Pair),
-        ) { current, bytes, status, viewing ->
+        ) { current, bytes, status, email, viewing ->
             SettingsUiState(
                 settings = current,
                 cacheBytes = bytes,
                 driveConfigured = auth.isConfigured(),
                 firebaseConfigured = firestore.isAvailable,
+                accountEmail = email,
                 diagnosticsStatus = status,
                 logText = viewing.first,
                 pendingShare = viewing.second,
@@ -98,15 +101,27 @@ class SettingsViewModel @Inject constructor(
 
     fun setCrossfade(ms: Int) = viewModelScope.launch { settings.setCrossfadeMs(ms) }
 
+    fun setAbTesting(on: Boolean) = viewModelScope.launch { settings.setAbTestingEnabled(on) }
+
     fun clearDownloads() {
         downloads.removeAllDownloads()
         sampleCache()
     }
 
-    /** Lets the app play the untranscoded WAVs, at roughly ten times the size. */
+    fun getGoogleSignInIntent(): Intent = firestore.getGoogleSignInIntent()
+
+    fun handleGoogleSignIn(data: Intent?) = viewModelScope.launch {
+        firestore.handleSignInResult(data)
+    }
+
+    /**
+     * Switches to the transcoded AAC mirror, for anyone who still runs tools/transcode.
+     *
+     * The default is the WAV tree, which is the only one the library actually has.
+     */
     fun toggleSourceRoot() = viewModelScope.launch {
         val next = if (uiState.value.settings.sourceRoot == AppSettings.DEFAULT_SOURCE_ROOT) {
-            AppSettings.WAV_SOURCE_ROOT
+            AppSettings.TRANSCODED_SOURCE_ROOT
         } else {
             AppSettings.DEFAULT_SOURCE_ROOT
         }
