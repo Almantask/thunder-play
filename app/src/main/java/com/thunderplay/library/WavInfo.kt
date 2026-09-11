@@ -12,7 +12,7 @@ package com.thunderplay.library
  * a 4 KB range request beats downloading 40 MB to read one sentence.
  */
 data class WavInfo(
-    /** INAM - the prompt, capped by the generator at 120 characters. */
+    /** INAM - the prompt, capped by the generator at [PROMPT_CAP] characters. */
     val prompt: String? = null,
     /** IGNR - Instrumental, Ambience or Sound Effects. */
     val genre: String? = null,
@@ -48,6 +48,14 @@ data class WavInfo(
     companion object {
         /** Enough to clear `fmt ` and the INFO chunk that follows it, with room to spare. */
         const val HEAD_BYTES = 4096
+
+        /**
+         * The generator cuts INAM off at this many characters, mid-word if it has to.
+         *
+         * Most real prompts are longer, so a prompt exactly this long has almost certainly lost its
+         * tail - which is worth showing, or the cut reads as the app's doing.
+         */
+        const val PROMPT_CAP = 120
 
         /**
          * Reads the INFO fields from the first bytes of a WAV, or null if there are none.

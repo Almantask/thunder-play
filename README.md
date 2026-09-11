@@ -40,13 +40,17 @@ and the app does not need it.
 - **Deletes safely.** Removing a track from Drive moves it — and its source WAV — into
   `_ThunderPlayTrash\`. Nothing is ever permanently deleted.
 - **Judges rival takes by swiping.** Switch on *A/B testing* in Settings for a tab that deals the
-  two to four renders of one cue as a card: tap either side to hear it - without crossfading, so
-  two takes never overlap - and swipe the card towards the one that wins. Three or four takes are
-  a knockout ladder, so the question on screen is always just A or B. The keeper is filed into
-  `_ThunderPlayAB\good\` with the rest in `_ThunderPlayAB\bad\`; nothing moves until a cue has a
-  winner, so *Undo* and *Later* cannot cost anything. The prompt is read out of the source WAV's
-  RIFF tags and written onto each judged file's Drive description, so both batches stay readable.
-  Winners stay in the library; nothing is deleted.
+  two to four renders of one cue as a card, with the prompt they were generated from filling it -
+  side by side, at the same size, when the two takes' prompts differ - and never smaller than
+  comfortably readable; tap a prompt to read it in full. Tap either take to hear it -
+  without crossfading, so two takes never overlap - and swipe the card towards the one that wins,
+  or call it a *Tie* when neither is better and keep both. Three or four takes are a knockout
+  ladder, so the question on screen is always just A or B. Keepers are filed into
+  `_ThunderPlayAB\good\` with the rest in `_ThunderPlayAB\bad\`; a tie is recorded as its own
+  verdict, so it never counts as a win in the prompt insights. Nothing moves until a cue is
+  decided, so *Undo* and *Later* cannot cost anything. The prompt is written onto each judged
+  file's Drive description, so both batches stay readable. Keepers stay in the library; nothing is
+  deleted.
 
 ## Layout
 

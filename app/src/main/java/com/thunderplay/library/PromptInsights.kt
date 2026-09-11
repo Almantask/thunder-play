@@ -116,6 +116,9 @@ object PromptInsights {
             when (AbVerdict.from(track.abVerdict)) {
                 AbVerdict.Good -> wins++
                 AbVerdict.Bad -> losses++
+                // A draw is a statement that the difference did not matter, so it is evidence for
+                // neither side. Counting it as a win would credit every word the two prompts share.
+                AbVerdict.Tie -> Unit
                 null -> Unit
             }
         }

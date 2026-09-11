@@ -119,6 +119,68 @@ class AbGroupingTest {
     }
 
     @Test
+    fun `drawn takes are kept as ties beside the winner`() {
+        val group = AbGrouping.candidates(
+            listOf(
+                track("ancient-ambient-awe-90s-aaaaaaaa", driveId = "a"),
+                track("ancient-ambient-awe-90s-bbbbbbbb", driveId = "b"),
+                track("ancient-ambient-awe-90s-cccccccc", driveId = "c"),
+            ),
+        ).single()
+
+        val verdicts = AbGrouping.verdicts(group, winnerDriveId = "b", tiedDriveIds = setOf("c"))
+
+        assertThat(verdicts).containsExactly(
+            "a", AbVerdict.Bad,
+            "b", AbVerdict.Good,
+            "c", AbVerdict.Tie,
+        )
+    }
+
+    @Test
+    fun `a cue that was only tied names no winner`() {
+        val group = AbGrouping.candidates(
+            listOf(
+                track("ancient-ambient-awe-90s-aaaaaaaa", driveId = "a"),
+                track("ancient-ambient-awe-90s-bbbbbbbb", driveId = "b"),
+            ),
+        ).single()
+
+        val verdicts = AbGrouping.verdicts(group, winnerDriveId = null, tiedDriveIds = setOf("a", "b"))
+
+        assertThat(verdicts).containsExactly("a", AbVerdict.Tie, "b", AbVerdict.Tie)
+    }
+
+    @Test
+    fun `a judgement that keeps nothing is rejected`() {
+        // No winner and no tie would file every take as bad, which no judgement ever means.
+        val group = AbGrouping.candidates(
+            listOf(
+                track("ancient-ambient-awe-90s-aaaaaaaa", driveId = "a"),
+                track("ancient-ambient-awe-90s-bbbbbbbb", driveId = "b"),
+            ),
+        ).single()
+
+        assertThrows(IllegalArgumentException::class.java) {
+            AbGrouping.verdicts(group, winnerDriveId = null)
+        }
+    }
+
+    @Test
+    fun `a tie from outside the group is rejected`() {
+        val group = AbGrouping.candidates(
+            listOf(
+                track("ancient-ambient-awe-90s-aaaaaaaa", driveId = "a"),
+                track("ancient-ambient-awe-90s-bbbbbbbb", driveId = "b"),
+            ),
+        ).single()
+
+        assertThrows(IllegalArgumentException::class.java) {
+            AbGrouping.verdicts(group, winnerDriveId = "a", tiedDriveIds = setOf("elsewhere"))
+        }
+    }
+
+    @Test
     fun `a winner from outside the group is rejected`() {
         val group = AbGrouping.candidates(
             listOf(

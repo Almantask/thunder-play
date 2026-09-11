@@ -90,7 +90,7 @@ internal class FakeTrackDao(seed: List<TrackEntity>) : TrackDao {
         driveId: String,
         verdict: String,
         judgedAt: Long,
-        winnerDriveId: String,
+        winnerDriveId: String?,
         prompt: String?,
     ) {
         rows[driveId] = rows.getValue(driveId).copy(

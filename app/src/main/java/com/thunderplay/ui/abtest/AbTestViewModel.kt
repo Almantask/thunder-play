@@ -35,8 +35,14 @@ data class AbTestUiState(
     /** The ladder for the cue on top of the deck. */
     val bracket: AbBracket? = null,
     val good: List<TrackEntity> = emptyList(),
+    val drawn: List<TrackEntity> = emptyList(),
     val bad: List<TrackEntity> = emptyList(),
-    /** Drive id to prompt, filled in as cues come up. */
+    /**
+     * Drive id to prompt for every take in the deck that has one.
+     *
+     * Mostly straight from Room, where the metadata indexer has already put the prompt of every
+     * track it has reached; a network read fills in only the takes it has not got to yet.
+     */
     val prompts: Map<String, String> = emptyMap(),
     val loadingPrompts: Boolean = false,
     /** How many cues are still being written to Drive. */
@@ -48,31 +54,48 @@ data class AbTestUiState(
     val duel: AbDuel? get() = bracket?.duel
 
     /**
-     * The prompt both takes were generated from, when they agree on it.
+     * The prompt for the card, when the two takes on it do not disagree about it.
      *
      * Takes of one cue almost always share a prompt, so showing it on each side would spend half
-     * the card on a duplicate. When they disagree see [mixedPrompts] - that is the case worth
-     * spending the room on.
+     * the card on a duplicate. When only one side's has been read it is still shown - it is far
+     * more likely to be the cue's prompt than not, and [unreadSide] says which side is unconfirmed.
+     * When they disagree see [mixedPrompts] - that is the case worth spending the room on.
      */
     val sharedPrompt: String?
         get() {
             val duel = duel ?: return null
-            val a = prompts[duel.a.driveId] ?: return null
-            return a.takeIf { it == prompts[duel.b.driveId] }
+            if (mixedPrompts) return null
+            return prompts[duel.a.driveId] ?: prompts[duel.b.driveId]
+        }
+
+    /** "A" or "B" when exactly one side of the card has a prompt, so the other is unconfirmed. */
+    val unreadSide: String?
+        get() {
+            val duel = duel ?: return null
+            val a = duel.a.driveId in prompts
+            val b = duel.b.driveId in prompts
+            return when {
+                a && !b -> "B"
+                b && !a -> "A"
+                else -> null
+            }
         }
 
     /**
-     * True when the cue's takes turn out to have been generated from different prompts.
+     * True when the two takes on the card were generated from different prompts.
      *
-     * The generator truncates its filename slug at 48 characters, so two unrelated cues can collide
-     * on a key. Reading the real prompts is the only way to notice, and noticing has to be the
-     * user's job - hence a warning rather than a silent regrouping.
+     * Judged per card rather than per cue: the card is what the decision is about, and a third
+     * take with a different prompt says nothing about the pair in front of you until it comes up.
+     * The generator truncates its filename slug at 48 characters, so two unrelated cues can
+     * collide on a key; reading the real prompts is the only way to notice, and noticing has to
+     * be the user's job - hence a warning rather than a silent regrouping.
      */
     val mixedPrompts: Boolean
         get() {
-            val group = bracket?.group ?: return false
-            val known = group.takes.mapNotNull { prompts[it.driveId] }
-            return known.size > 1 && known.distinct().size > 1
+            val duel = duel ?: return false
+            val a = prompts[duel.a.driveId] ?: return false
+            val b = prompts[duel.b.driveId] ?: return false
+            return a != b
         }
 }
 
@@ -86,9 +109,9 @@ class AbTestViewModel @Inject constructor(
 
     private data class Interaction(
         val tab: AbTab = AbTab.Judge,
-        /** The cue [picks] belong to; any other cue on top of the deck starts a fresh ladder. */
+        /** The cue [outcomes] belong to; any other cue on top of the deck starts a fresh ladder. */
         val cueKey: String? = null,
-        val picks: List<String> = emptyList(),
+        val outcomes: List<String?> = emptyList(),
         val skipped: List<String> = emptyList(),
         val filing: Set<String> = emptySet(),
         val filed: Set<String> = emptySet(),
@@ -99,29 +122,35 @@ class AbTestViewModel @Inject constructor(
     // One state object rather than eight flows: combine takes at most five sources, and the
     // interaction fields always change together anyway.
     private val interaction = MutableStateFlow(Interaction())
-    private val prompts = MutableStateFlow<Map<String, String>>(emptyMap())
+    /** Prompts read over the network, for takes the indexer had not reached. */
+    private val readPrompts = MutableStateFlow<Map<String, String>>(emptyMap())
     private val promptsInFlight = mutableSetOf<String>()
 
     val uiState: StateFlow<AbTestUiState> = combine(
         trackDao.observeUnjudged(),
         trackDao.observeJudged(),
-        prompts,
+        readPrompts,
         interaction,
         settings.settings,
-    ) { unjudged, judged, loadedPrompts, ix, _ ->
+    ) { unjudged, judged, read, ix, _ ->
         val deck = AbDeck.order(AbGrouping.candidates(unjudged), ix.skipped, ix.filing + ix.filed)
-        val (good, bad) = judged.partition { it.abVerdict == AbVerdict.Good.stored }
+        val batches = judged.groupBy { AbVerdict.from(it.abVerdict) }
         AbTestUiState(
             tab = ix.tab,
             deck = deck,
             bracket = deck.firstOrNull()?.let { group ->
-                // Picks are remembered per cue, so a refresh landing mid-ladder does not throw
-                // away the rounds already swiped.
-                if (group.key == ix.cueKey) AbBracket.resume(group, ix.picks) else AbBracket(group)
+                // Outcomes are remembered per cue, so a refresh landing mid-ladder does not throw
+                // away the rounds already decided.
+                if (group.key == ix.cueKey) {
+                    AbBracket.resume(group, ix.outcomes)
+                } else {
+                    AbBracket(group)
+                }
             },
-            good = good,
-            bad = bad,
-            prompts = loadedPrompts,
+            good = batches[AbVerdict.Good].orEmpty(),
+            drawn = batches[AbVerdict.Tie].orEmpty(),
+            bad = batches[AbVerdict.Bad].orEmpty(),
+            prompts = promptsFor(deck, read),
             loadingPrompts = ix.loadingPrompts,
             filing = ix.filing.size,
             filed = ix.filed.size,
@@ -144,28 +173,38 @@ class AbTestViewModel @Inject constructor(
      * the swipe is the decision, and a round trip per cue would make clearing a backlog feel like
      * filling in a form. A cue that will not file comes back to the deck with a message.
      */
-    fun keep(driveId: String) {
+    fun keep(driveId: String) = advance(uiState.value.bracket?.keep(driveId))
+
+    /**
+     * Records that nothing separated the two takes on the card.
+     *
+     * Both are kept, and on a three or four take cue the ladder carries on with the next
+     * challenger - a draw is an answer to the question on screen, not a way of putting it off.
+     * That is what *Later* is for.
+     */
+    fun callDraw() = advance(uiState.value.bracket?.draw())
+
+    private fun advance(next: AbBracket?) {
+        if (next == null) return
         val state = uiState.value
-        val next = state.bracket?.keep(driveId) ?: return
-        val winner = next.winner
-        if (winner == null) {
-            update { it.copy(cueKey = next.group.key, picks = next.picks) }
-            // The leader has just been heard; the challenger is the one that needs listening to.
+        if (!next.finished) {
+            update { it.copy(cueKey = next.group.key, outcomes = next.outcomes) }
+            // The take holding the card has just been heard; the challenger is the new one.
             follow(next.duel, next.duel?.b?.driveId)
             return
         }
-        file(next.group, winner)
+        file(next)
         // Room has not caught up yet, so the cue behind this one is the one coming up.
         val upNext = state.deck.getOrNull(1)?.let(::AbBracket)
         follow(upNext?.duel, upNext?.duel?.a?.driveId)
     }
 
-    /** Takes back the last swipe. Nothing is filed until a cue's last round, so this is safe. */
+    /** Takes back the last decision. Nothing is filed until a cue's last round, so this is safe. */
     fun undo() {
         val bracket = uiState.value.bracket ?: return
         if (bracket.decided == 0) return
         val back = bracket.undo()
-        update { it.copy(cueKey = back.group.key, picks = back.picks) }
+        update { it.copy(cueKey = back.group.key, outcomes = back.outcomes) }
     }
 
     /** Puts this cue off: it goes to the back of the deck, and its part-judged ladder is dropped. */
@@ -175,7 +214,7 @@ class AbTestViewModel @Inject constructor(
             it.copy(
                 skipped = it.skipped.filterNot { skipped -> skipped == key } + key,
                 cueKey = null,
-                picks = emptyList(),
+                outcomes = emptyList(),
             )
         }
     }
@@ -208,39 +247,62 @@ class AbTestViewModel @Inject constructor(
         player.setCrossfadeOverride(if (suppress) 0 else null)
 
     /**
-     * Reads the prompts for the card on screen and the one behind it.
+     * Reads the prompts Room does not have yet, for the card on screen and the one behind it.
      *
-     * Deliberately not the whole deck: a few hundred candidates would mean a few hundred range
-     * requests on open, for prompts nobody has reached yet. One card ahead is enough for them to
-     * be there by the time the swipe lands.
+     * Usually a no-op: the metadata indexer stores every track's prompt, so a network read is only
+     * needed for takes it has not reached - a fresh install, or renders that landed since the last
+     * pass. Deliberately not the whole deck even then: that would be a few hundred range requests
+     * for prompts nobody has reached yet, and one card ahead is enough for them to be there by the
+     * time the swipe lands.
+     *
+     * Each prompt is published the moment it arrives rather than with the batch, so the card on
+     * screen is not kept waiting on the reads for the one behind it.
      */
     fun prefetchPrompts() {
+        val known = uiState.value.prompts
         val missing = uiState.value.deck.take(2)
             .flatMap { it.takes }
             .distinctBy { it.driveId }
-            .filter { it.driveId !in prompts.value && it.driveId !in promptsInFlight }
+            .filter { it.driveId !in known && it.driveId !in promptsInFlight }
         if (missing.isEmpty()) return
-        val ids = missing.mapTo(mutableSetOf(), TrackEntity::driveId)
-        promptsInFlight += ids
+        promptsInFlight += missing.map(TrackEntity::driveId)
+        update { it.copy(loadingPrompts = true) }
         viewModelScope.launch {
-            update { it.copy(loadingPrompts = true) }
-            val found = mutableMapOf<String, String>()
             for (take in missing) {
-                val prompt = take.abPrompt ?: abTest.readPrompt(take)?.prompt
-                if (prompt != null) found[take.driveId] = prompt
+                val prompt = runCatching { abTest.readPrompt(take)?.prompt }.getOrNull()
+                if (prompt != null) readPrompts.value = readPrompts.value + (take.driveId to prompt)
+                promptsInFlight -= take.driveId
             }
-            prompts.value = prompts.value + found
-            promptsInFlight -= ids
             update { it.copy(loadingPrompts = promptsInFlight.isNotEmpty()) }
         }
     }
 
-    private fun file(group: AbGroup, winner: TrackEntity) {
+    /**
+     * Every deck take's prompt, preferring what Room has.
+     *
+     * The indexed prompt wins over one captured at judging time, and both over a network read:
+     * Room is refreshed whenever the file's checksum changes, which a read cached in this view
+     * model never would be.
+     */
+    private fun promptsFor(deck: List<AbGroup>, read: Map<String, String>): Map<String, String> =
+        buildMap {
+            for (take in deck.asSequence().flatMap { it.takes }) {
+                (take.prompt ?: take.abPrompt ?: read[take.driveId])?.let { put(take.driveId, it) }
+            }
+        }
+
+    private fun file(bracket: AbBracket) {
+        val group = bracket.group
         val takeIds = group.takes.mapTo(mutableSetOf(), TrackEntity::driveId)
-        update { it.copy(filing = it.filing + group.key, cueKey = null, picks = emptyList()) }
+        update { it.copy(filing = it.filing + group.key, cueKey = null, outcomes = emptyList()) }
         viewModelScope.launch {
             val result = runCatching {
-                abTest.judge(group, winner.driveId, prompts.value.filterKeys { it in takeIds })
+                abTest.judge(
+                    group = group,
+                    winnerDriveId = bracket.winner?.driveId,
+                    prompts = uiState.value.prompts.filterKeys { it in takeIds },
+                    tiedDriveIds = bracket.tied.mapTo(mutableSetOf(), TrackEntity::driveId),
+                )
             }
             update { ix ->
                 ix.copy(

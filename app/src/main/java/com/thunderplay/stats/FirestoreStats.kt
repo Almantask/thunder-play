@@ -233,7 +233,7 @@ class FirestoreStats @Inject constructor(
     fun pushAbVerdict(
         driveId: String,
         verdict: String,
-        winnerDriveId: String,
+        winnerDriveId: String?,
         groupKey: String,
         prompt: String?,
         originalFolderPath: String,

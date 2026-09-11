@@ -6,6 +6,16 @@ import com.thunderplay.data.TrackEntity
 enum class AbVerdict(val stored: String) {
     Good("good"),
     Bad("bad"),
+
+    /**
+     * Kept, but not because it beat anything: nothing separated it from the take it was up against.
+     *
+     * A separate verdict rather than a second [Good] because the two are different claims. "This
+     * one won" is evidence about a prompt; "these two are indistinguishable" is evidence that the
+     * difference between them does not matter, and counting it as a win would put a thumb on the
+     * scale of every word both prompts share.
+     */
+    Tie("tie"),
     ;
 
     companion object {
@@ -71,13 +81,36 @@ object AbGrouping {
             }
             .sortedWith(compareBy({ it.category }, { it.level.orEmpty() }, { it.slug }))
 
-    /** Winner keeps the cue, every other take is an also-ran. The pure core of a judgement. */
-    fun verdicts(group: AbGroup, winnerDriveId: String): Map<String, AbVerdict> {
-        require(group.takes.any { it.driveId == winnerDriveId }) {
+    /**
+     * Winner keeps the cue, drawn takes are kept beside it, everything else is an also-ran.
+     *
+     * [winnerDriveId] is null for a cue that was only ever drawn - nothing beat anything, so
+     * naming a winner would be inventing one. A cue with neither a winner nor a draw is rejected:
+     * that would file every take as bad, which no judgement ever means.
+     *
+     * The pure core of a judgement.
+     */
+    fun verdicts(
+        group: AbGroup,
+        winnerDriveId: String?,
+        tiedDriveIds: Set<String> = emptySet(),
+    ): Map<String, AbVerdict> {
+        val ids = group.takes.mapTo(mutableSetOf(), TrackEntity::driveId)
+        require(winnerDriveId == null || winnerDriveId in ids) {
             "Winner $winnerDriveId is not one of the takes in group ${group.key}"
         }
+        require(tiedDriveIds.all { it in ids }) {
+            "Drawn takes ${tiedDriveIds - ids} are not in group ${group.key}"
+        }
+        require(winnerDriveId != null || tiedDriveIds.isNotEmpty()) {
+            "Group ${group.key} has no keeper, so there is nothing to file"
+        }
         return group.takes.associate { take ->
-            take.driveId to if (take.driveId == winnerDriveId) AbVerdict.Good else AbVerdict.Bad
+            take.driveId to when (take.driveId) {
+                winnerDriveId -> AbVerdict.Good
+                in tiedDriveIds -> AbVerdict.Tie
+                else -> AbVerdict.Bad
+            }
         }
     }
 

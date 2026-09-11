@@ -69,21 +69,105 @@ class AbDuelsTest {
     }
 
     @Test
-    fun `resuming keeps only the picks that still hold after a refresh`() {
+    fun `resuming keeps only the outcomes that still hold after a refresh`() {
         // Judged "a" over "b", then "b" was trashed from the library screen and the group came
-        // back as two takes. The first pick still names a real take, so round one stands.
-        val bracket = AbBracket.resume(group("a", "c"), picks = listOf("a", "c"))
+        // back as two takes. The first outcome still names a real take, so round one stands.
+        val bracket = AbBracket.resume(group("a", "c"), outcomes = listOf("a", "c"))
 
-        assertThat(bracket.picks).isEqualTo(listOf("a"))
+        assertThat(bracket.outcomes).isEqualTo(listOf("a"))
         assertThat(bracket.winner!!.driveId).isEqualTo("a")
     }
 
     @Test
     fun `resuming a cue whose takes have all changed starts over`() {
-        val bracket = AbBracket.resume(group("x", "y"), picks = listOf("a"))
+        val bracket = AbBracket.resume(group("x", "y"), outcomes = listOf("a"))
 
-        assertThat(bracket.picks).isEmpty()
+        assertThat(bracket.outcomes).isEmpty()
         assertThat(bracket.duel!!.round).isEqualTo(1)
+    }
+
+    @Test
+    fun `resuming replays draws as well as keeps`() {
+        val bracket = AbBracket.resume(group("a", "b", "c"), outcomes = listOf(null, "a"))
+
+        assertThat(bracket.finished).isTrue()
+        assertThat(bracket.winner!!.driveId).isEqualTo("a")
+        assertThat(bracket.tied.map { it.driveId }).containsExactly("b")
+    }
+
+    @Test
+    fun `a tie between two takes keeps both and names no winner`() {
+        // The case the button exists for. Filing one of them as the winner would put a preference
+        // in the record that the user explicitly declined to express.
+        val bracket = AbBracket(group("a", "b")).draw()!!
+
+        assertThat(bracket.finished).isTrue()
+        assertThat(bracket.winner).isNull()
+        assertThat(bracket.tied.map { it.driveId }).containsExactly("a", "b").inOrder()
+    }
+
+    @Test
+    fun `a tie mid-ladder keeps the challenger and carries on with the same leader`() {
+        var bracket = AbBracket(group("a", "b", "c")).draw()!!
+
+        // "b" is kept beside "a", but "a" still holds the card against the next challenger.
+        assertThat(bracket.finished).isFalse()
+        assertThat(bracket.duel!!.a.driveId).isEqualTo("a")
+        assertThat(bracket.duel!!.b.driveId).isEqualTo("c")
+        assertThat(bracket.duel!!.round).isEqualTo(2)
+        bracket = bracket.keep("a")!!
+
+        assertThat(bracket.winner!!.driveId).isEqualTo("a")
+        assertThat(bracket.tied.map { it.driveId }).containsExactly("b")
+    }
+
+    @Test
+    fun `takes drawn against a leader go down with it when it is beaten`() {
+        // "a" and "b" were indistinguishable, then "c" beat "a". Keeping "b" would be filing a
+        // take as a keeper on the strength of a tie with one the user has since ruled worse.
+        val bracket = AbBracket(group("a", "b", "c")).draw()!!.keep("c")!!
+
+        assertThat(bracket.winner!!.driveId).isEqualTo("c")
+        assertThat(bracket.tied).isEmpty()
+    }
+
+    @Test
+    fun `a tie after a win leaves the winner the winner`() {
+        val bracket = AbBracket(group("a", "b", "c")).keep("a")!!.draw()!!
+
+        assertThat(bracket.winner!!.driveId).isEqualTo("a")
+        assertThat(bracket.tied.map { it.driveId }).containsExactly("c")
+    }
+
+    @Test
+    fun `a cue that was only ever tied keeps every take and names no winner`() {
+        val bracket = AbBracket(group("a", "b", "c")).draw()!!.draw()!!
+
+        assertThat(bracket.winner).isNull()
+        assertThat(bracket.tied.map { it.driveId }).containsExactly("a", "b", "c").inOrder()
+    }
+
+    @Test
+    fun `there is no result until the last round`() {
+        // Mid-ladder the take holding the card is a leader, not a winner, and nothing is kept yet.
+        val bracket = AbBracket(group("a", "b", "c")).keep("a")!!
+
+        assertThat(bracket.leader.driveId).isEqualTo("a")
+        assertThat(bracket.winner).isNull()
+        assertThat(bracket.tied).isEmpty()
+    }
+
+    @Test
+    fun `undo takes back a tie`() {
+        val back = AbBracket(group("a", "b", "c")).draw()!!.undo()
+
+        assertThat(back.decided).isEqualTo(0)
+        assertThat(back.duel!!.b.driveId).isEqualTo("b")
+    }
+
+    @Test
+    fun `a tie on a finished ladder is a stale tap`() {
+        assertThat(AbBracket(group("a", "b")).keep("a")!!.draw()).isNull()
     }
 
     @Test

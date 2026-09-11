@@ -31,7 +31,7 @@ interface TrackDao {
         """
         SELECT * FROM tracks
         WHERE trashedAt IS NULL
-          AND (abVerdict IS NULL OR abVerdict = 'good')
+          AND (abVerdict IS NULL OR abVerdict IN ('good', 'tie'))
           AND (:category IS NULL OR category = :category)
           AND (:level IS NULL OR level = :level)
           AND (:genre IS NULL OR genre = :genre)
@@ -69,7 +69,7 @@ interface TrackDao {
     @Query(
         """
         SELECT DISTINCT category FROM tracks
-        WHERE trashedAt IS NULL AND (abVerdict IS NULL OR abVerdict = 'good')
+        WHERE trashedAt IS NULL AND (abVerdict IS NULL OR abVerdict IN ('good', 'tie'))
         ORDER BY category
         """,
     )
@@ -80,7 +80,7 @@ interface TrackDao {
         """
         SELECT DISTINCT level FROM tracks
         WHERE trashedAt IS NULL AND level IS NOT NULL
-          AND (abVerdict IS NULL OR abVerdict = 'good')
+          AND (abVerdict IS NULL OR abVerdict IN ('good', 'tie'))
         ORDER BY level
         """,
     )
@@ -91,7 +91,7 @@ interface TrackDao {
         """
         SELECT DISTINCT genre FROM tracks
         WHERE trashedAt IS NULL AND genre IS NOT NULL
-          AND (abVerdict IS NULL OR abVerdict = 'good')
+          AND (abVerdict IS NULL OR abVerdict IN ('good', 'tie'))
         ORDER BY genre
         """,
     )
@@ -317,7 +317,8 @@ interface TrackDao {
         driveId: String,
         verdict: String,
         judgedAt: Long,
-        winnerDriveId: String,
+        /** Null for a cue that was only ever drawn, where nothing beat anything. */
+        winnerDriveId: String?,
         prompt: String?,
     )
 

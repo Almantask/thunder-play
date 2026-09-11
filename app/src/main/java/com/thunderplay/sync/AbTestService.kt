@@ -57,7 +57,12 @@ class AbTestService @Inject constructor(
     }
 
     /**
-     * Moves the winner into `good/` and every other take into `bad/`.
+     * Moves the keepers into `good/` and every beaten take into `bad/`.
+     *
+     * A drawn take is a keeper too, and lands in `good/` beside the winner: on the PC that folder
+     * answers "what did I keep", and splitting it would make the answer live in two places. The
+     * draw itself is not lost - it is on the row, on the Drive file's own properties and in
+     * Firestore, which is where the question "was this picked or merely not rejected" is asked.
      *
      * Ordering is chosen so that any prefix of it leaves a state something can finish:
      *
@@ -69,16 +74,20 @@ class AbTestService @Inject constructor(
      *   sitting in the library.
      * - Firestore last and fire-and-forget, so an outage cannot block the local truth.
      *
-     * Losers are judged before the winner. A failure part-way then leaves the library in the
-     * intended end state minus the winner's relocation; the reverse would leave the winner gone and
+     * Losers are judged before the keepers. A failure part-way then leaves the library in the
+     * intended end state minus the keepers' relocation; the reverse would leave the winner gone and
      * the losers still competing, which reads as the cue having lost its best take.
+     *
+     * [winnerDriveId] is null when every round was drawn: nothing beat anything, and inventing a
+     * winner would put a preference in the record that the user declined to express.
      */
     suspend fun judge(
         group: AbGroup,
-        winnerDriveId: String,
+        winnerDriveId: String?,
         prompts: Map<String, String> = emptyMap(),
+        tiedDriveIds: Set<String> = emptySet(),
     ): AbJudgeResult {
-        val verdicts = AbGrouping.verdicts(group, winnerDriveId)
+        val verdicts = AbGrouping.verdicts(group, winnerDriveId, tiedDriveIds)
 
         val current = settings.settings.first()
         val rootId = current.libraryRootFolderId
@@ -88,20 +97,30 @@ class AbTestService @Inject constructor(
         // Resolved from the library root, never from inside the catalog tree: within the walk the
         // next refresh would list these files again and un-judge the whole batch.
         val ab = drive.ensureChildFolder(rootId, AppSettings.AB_FOLDER_NAME)
-        val destinations = AbVerdict.entries.associateWith { verdict ->
-            drive.ensureChildFolder(ab.id, folderNameFor(verdict)).id
-        }
+        // Resolved by folder name rather than by verdict: two verdicts share `good/`, and asking
+        // Drive to ensure the same folder twice is a wasted round trip on every judgement.
+        val folderIds = AbVerdict.entries.map(::folderNameFor).distinct()
+            .associateWith { name -> drive.ensureChildFolder(ab.id, name).id }
+        val destinations = AbVerdict.entries.associateWith { folderIds.getValue(folderNameFor(it)) }
 
         val judgedAt = System.currentTimeMillis()
         val failed = mutableListOf<String>()
         val orphanedSources = mutableListOf<String>()
         var moved = 0
 
-        val losersFirst = group.takes.sortedBy { it.driveId == winnerDriveId }
+        // Spelled out rather than taken from the enum's ordinal, which orders by declaration and
+        // would quietly reverse this the first time someone tidies the enum.
+        val losersFirst = group.takes.sortedBy {
+            when (verdicts.getValue(it.driveId)) {
+                AbVerdict.Bad -> 0
+                AbVerdict.Tie -> 1
+                AbVerdict.Good -> 2
+            }
+        }
         for (take in losersFirst) {
             val verdict = verdicts.getValue(take.driveId)
             val destination = destinations.getValue(verdict)
-            val prompt = prompts[take.driveId] ?: take.abPrompt
+            val prompt = prompts[take.driveId] ?: take.prompt ?: take.abPrompt
 
             tag(take, verdict, winnerDriveId, group.key, prompt)
 
@@ -145,7 +164,7 @@ class AbTestService @Inject constructor(
     }
 
     private fun folderNameFor(verdict: AbVerdict) = when (verdict) {
-        AbVerdict.Good -> AppSettings.AB_GOOD_FOLDER_NAME
+        AbVerdict.Good, AbVerdict.Tie -> AppSettings.AB_GOOD_FOLDER_NAME
         AbVerdict.Bad -> AppSettings.AB_BAD_FOLDER_NAME
     }
 
@@ -153,17 +172,19 @@ class AbTestService @Inject constructor(
     private suspend fun tag(
         take: TrackEntity,
         verdict: AbVerdict,
-        winnerDriveId: String,
+        winnerDriveId: String?,
         groupKey: String,
         prompt: String?,
     ) {
         // appProperties caps each key/value pair at 124 bytes, which a 120-character prompt can
         // exceed on its own - so prose goes in the description and only short values go here.
-        val properties = mapOf(
-            "abVerdict" to verdict.stored,
-            "abWinner" to winnerDriveId,
-            "abJudgedAt" to System.currentTimeMillis().toString(),
-        )
+        val properties = buildMap {
+            put("abVerdict", verdict.stored)
+            // Left out rather than written empty when the cue was only ever drawn: Drive keeps
+            // whatever is written, and "abWinner=" would read as a winner that could not be named.
+            winnerDriveId?.let { put("abWinner", it) }
+            put("abJudgedAt", System.currentTimeMillis().toString())
+        }
         for (fileId in listOfNotNull(take.driveId, take.sourceWavDriveId).distinct()) {
             try {
                 drive.writeMetadata(fileId, description = prompt, appProperties = properties)
