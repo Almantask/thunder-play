@@ -54,31 +54,16 @@ data class AbTestUiState(
     val duel: AbDuel? get() = bracket?.duel
 
     /**
-     * The prompt for the card, when the two takes on it do not disagree about it.
+     * The two prompts on the card, in A-then-B order.
      *
-     * Takes of one cue almost always share a prompt, so showing it on each side would spend half
-     * the card on a duplicate. When only one side's has been read it is still shown - it is far
-     * more likely to be the cue's prompt than not, and [unreadSide] says which side is unconfirmed.
-     * When they disagree see [mixedPrompts] - that is the case worth spending the room on.
+     * Always two, even when they match and even when one side has not been read yet. Collapsing
+     * to a single sentence made a mixed pair look like a shared prompt until both WAV headers
+     * landed, and the choice on screen is always about two takes.
      */
-    val sharedPrompt: String?
+    val cardPrompts: List<String?>?
         get() {
             val duel = duel ?: return null
-            if (mixedPrompts) return null
-            return prompts[duel.a.driveId] ?: prompts[duel.b.driveId]
-        }
-
-    /** "A" or "B" when exactly one side of the card has a prompt, so the other is unconfirmed. */
-    val unreadSide: String?
-        get() {
-            val duel = duel ?: return null
-            val a = duel.a.driveId in prompts
-            val b = duel.b.driveId in prompts
-            return when {
-                a && !b -> "B"
-                b && !a -> "A"
-                else -> null
-            }
+            return listOf(prompts[duel.a.driveId], prompts[duel.b.driveId])
         }
 
     /**
@@ -92,9 +77,8 @@ data class AbTestUiState(
      */
     val mixedPrompts: Boolean
         get() {
-            val duel = duel ?: return false
-            val a = prompts[duel.a.driveId] ?: return false
-            val b = prompts[duel.b.driveId] ?: return false
+            val a = cardPrompts?.getOrNull(0) ?: return false
+            val b = cardPrompts?.getOrNull(1) ?: return false
             return a != b
         }
 }
