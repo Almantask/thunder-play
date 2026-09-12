@@ -51,7 +51,8 @@ class AbTestService @Inject constructor(
 
     /** The prompt and instrumentation the generator wrote into the source WAV, if it is reachable. */
     suspend fun readPrompt(track: TrackEntity): WavInfo? {
-        val wavId = track.sourceWavDriveId ?: return null
+        // Same fallback as the indexer: on a WAV-only library the track is its own source.
+        val wavId = track.sourceWavDriveId ?: track.driveId
         val head = drive.readHead(wavId, WavInfo.HEAD_BYTES) ?: return null
         return WavInfo.parse(head)
     }

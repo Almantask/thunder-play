@@ -142,6 +142,29 @@ If you skip this section, everything else still works; only playlist sharing is 
 "$LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe" install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
+Without a cable, download the latest CI build instead (next section).
+
+---
+
+## 7. Download the latest CI build
+
+Every push to `main` publishes `thunder-play.apk` as a GitHub Release, so the phone can pick it
+up without USB and without waiting on Drive for Desktop:
+
+**[https://github.com/Almantask/thunder-play/releases/latest](https://github.com/Almantask/thunder-play/releases/latest)**
+→ `thunder-play.apk` → install over the top.
+
+Pull requests attach the same APK as a workflow artifact under the Actions run.
+
+The APK only talks to Drive if it contains the service-account key from step 2. CI injects that
+key from the `DRIVE_SERVICE_ACCOUNT_JSON` repository secret (the full JSON file contents).
+**This repository is public, so anyone can download the APK.** Make the repository private
+before adding that secret, or the key leaks. Rotating the key afterwards is step 2 again plus a
+rebuild.
+
+Without the secret the APK still installs; it shows "Drive is not connected" until you build
+locally with the key in `app/src/main/assets/drive-service-account.json`.
+
 ---
 
 ## Reading errors without a cable

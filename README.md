@@ -40,9 +40,9 @@ and the app does not need it.
 - **Deletes safely.** Removing a track from Drive moves it — and its source WAV — into
   `_ThunderPlayTrash\`. Nothing is ever permanently deleted.
 - **Judges rival takes by swiping.** Switch on *A/B testing* in Settings for a tab that deals the
-  two to four renders of one cue as a card, with the prompt they were generated from filling it -
-  side by side, at the same size, when the two takes' prompts differ - and never smaller than
-  comfortably readable; tap a prompt to read it in full. Tap either take to hear it -
+  two to four renders of one cue as a card, with the prompt each take was generated from filling
+  it side by side, at the same size — one sentence per take, even when they match — and never
+  smaller than comfortably readable; tap a prompt to read it in full. Tap either take to hear it -
   without crossfading, so two takes never overlap - and swipe the card towards the one that wins,
   or call it a *Tie* when neither is better and keep both. Three or four takes are a knockout
   ladder, so the question on screen is always just A or B. Keepers are filed into
@@ -91,5 +91,12 @@ Three constraints shaped most of the design, and each ruled out something simple
 ./gradlew test
 ```
 
+Every push and pull request also runs that on GitHub Actions, and publishes a debug APK. The
+latest successful build on `main` is at **[Releases → Latest build](https://github.com/Almantask/thunder-play/releases/latest)**
+(`thunder-play.apk`). Pull requests attach the same file as a workflow artifact.
+
 `app/src/main/assets/drive-service-account.json` is gitignored and must never be committed; treat
-a built APK as a secret, since the key travels inside it.
+a built APK as a secret, since the key travels inside it. The CI APK only contains the key if the
+`DRIVE_SERVICE_ACCOUNT_JSON` repository secret is set — and because this repository is public,
+make it private before adding that secret, or the key leaks with every download. See
+[docs/SETUP.md](docs/SETUP.md#7-download-the-latest-ci-build).

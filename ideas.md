@@ -143,8 +143,11 @@ conversation — the A/B tab, aimed at the people the cues are actually for. Nee
 
 ## Tier 5 — unglamorous, worth it anyway
 
-- **CI.** Fourteen test files and no `.github/`. A workflow running `./gradlew test` on push is
-  about twenty lines.
+- **CI.** **Done.** `.github/workflows/ci.yml` runs `./gradlew testDebugUnitTest` and
+  `assembleDebug` on every push and pull request, uploads the APK as an artifact, and publishes
+  it as the `latest` GitHub Release on `main` so the phone can download it. The Drive key is
+  injected only when the `DRIVE_SERVICE_ACCOUNT_JSON` secret is set; because the repo is public,
+  that secret leaks via the APK unless the repository is made private first.
 - **Ratings and history export to Drive.** The curation work is the irreplaceable asset here and it
   lives in one Firestore project. A periodic JSON dump into the library folder makes it survivable.
 - **Free-tier usage readout in Settings.** The README promises nothing leaves the free tiers; a

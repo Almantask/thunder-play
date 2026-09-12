@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    name: Test and build APK
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests
+        run: chmod +x gradlew && ./gradlew testDebugUnitTest --stacktrace
+
+      - name: Install Drive service-account key
+        env:
+          DRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.DRIVE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -n "$DRIVE_SERVICE_ACCOUNT_JSON" ]; then
+            printf '%s\n' "$DRIVE_SERVICE_ACCOUNT_JSON" > app/src/main/assets/drive-service-account.json
+            echo "Embedded Drive service-account key in the APK."
+          else
+            echo "No DRIVE_SERVICE_ACCOUNT_JSON secret; the APK will show Drive as disconnected."
+          fi
+
+      - name: Assemble debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Name the APK
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/thunder-play.apk
+          sha256sum dist/thunder-play.apk | tee dist/thunder-play.apk.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: thunder-play
+          path: |
+            dist/thunder-play.apk
+            dist/thunder-play.apk.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-latest:
+    name: Publish latest build
+    needs: test-and-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: thunder-play
+          path: dist
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest build
+          prerelease: true
+          make_latest: true
+          files: |
+            dist/thunder-play.apk
+            dist/thunder-play.apk.sha256
+          body: |
+            Debug APK from `${{ github.sha }}`.
+
+            Install over the top of the app already on the phone. Check the file date so you
+            do not install a cached copy from a previous download.
+
+            The Drive service-account key is inside this APK only when the
+            `DRIVE_SERVICE_ACCOUNT_JSON` repository secret is set. Because this repository is
+            public, that secret leaks via the APK — make the repository private before adding it.

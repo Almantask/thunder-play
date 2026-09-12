@@ -103,10 +103,10 @@ import kotlinx.coroutines.launch
 /**
  * Picks one keeper per cue, one pair at a time.
  *
- * The card is the screen, and the prompt is the card. What is on trial is the sentence each take
- * was generated from, so that sentence gets the room: the takes themselves shrink to a play control
- * each, and the answer is a swipe towards the side that wins - or a tie, when nothing separates
- * them.
+ * The card is the screen, and the two prompts are the card. What is on trial is the sentence
+ * each take was generated from, so both sentences get the room - side by side, at the same size -
+ * the takes themselves shrink to a play control each, and the answer is a swipe towards the side
+ * that wins - or a tie, when nothing separates them.
  */
 @Composable
 fun AbTestScreen(viewModel: AbTestViewModel = hiltViewModel()) {
@@ -409,13 +409,10 @@ private fun DuelCard(
                     (if (compact) Modifier.height(COMPACT_PROMPT_HEIGHT) else Modifier.weight(1f))
                         .padding(top = 10.dp, bottom = 12.dp),
                 ) {
-                    if (state.mixedPrompts) {
-                        RivalPrompts(duel, state, nowPlaying, lean, onPlay, onTogglePlayPause, onRead)
-                    } else {
-                        SharedPrompt(
-                            duel, bracket.group, state, nowPlaying, lean, onPlay, onTogglePlayPause, onRead,
-                        )
-                    }
+                    // Always both takes: a mixed pair must not collapse to one sentence just
+                    // because the other side has not been read yet, and matching prompts still
+                    // belong to a two-way choice.
+                    PairPrompts(duel, state, nowPlaying, lean, onPlay, onTogglePlayPause, onRead)
                 }
 
                 Row(
@@ -457,96 +454,14 @@ private fun DuelCard(
 }
 
 /**
- * One prompt, the width of the card, with the two takes as controls underneath.
- *
- * Takes of a cue usually share a prompt, and printing the same sentence twice would halve the space
- * the thing on trial gets in exchange for nothing.
- */
-@Composable
-private fun SharedPrompt(
-    duel: AbDuel,
-    group: AbGroup,
-    state: AbTestUiState,
-    nowPlaying: NowPlaying,
-    lean: Float,
-    onPlay: (String) -> Unit,
-    onTogglePlayPause: () -> Unit,
-    onRead: (FullPrompt) -> Unit,
-) {
-    Column(Modifier.fillMaxSize()) {
-        val prompt = state.sharedPrompt
-        val unread = state.unreadSide
-        // Whose prompt this is. With only one side read it is that side's, not the pair's - the
-        // other is an assumption until it has been read too.
-        val (owner, source) = when (unread) {
-            "A" -> "Take B" to duel.b
-            "B" -> "Take A" to duel.a
-            else -> "Takes A and B" to duel.a
-        }
-        FittedPrompts(
-            texts = listOf(prompt ?: group.slug),
-            onRead = {
-                onRead(
-                    FullPrompt(
-                        owner = owner,
-                        fingerprint = source.fingerprint().takeIf { unread != null },
-                        text = prompt ?: group.slug,
-                        isFilename = prompt == null,
-                        take = source,
-                    ),
-                )
-            },
-            modifier = Modifier.weight(1f),
-        )
-        // Without a prompt the slug is all there is, and it has to say it is a filename rather than
-        // pass itself off as the sentence the take was generated from.
-        val caption = when {
-            prompt == null && state.loadingPrompts -> "Reading the prompt…"
-            prompt == null -> "No prompt could be read, so this is the filename"
-            unread != null && state.loadingPrompts -> "Take $unread's prompt is still being read"
-            unread != null -> "Take $unread's prompt could not be read"
-            else -> null
-        }
-        caption?.let {
-            Text(
-                it,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-        }
-        Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TakeControl(
-                label = "A",
-                take = duel.a,
-                nowPlaying = nowPlaying,
-                highlight = (-lean).coerceAtLeast(0f),
-                onPlay = onPlay,
-                onTogglePlayPause = onTogglePlayPause,
-                modifier = Modifier.weight(1f),
-            )
-            TakeControl(
-                label = "B",
-                take = duel.b,
-                nowPlaying = nowPlaying,
-                highlight = lean.coerceAtLeast(0f),
-                onPlay = onPlay,
-                onTogglePlayPause = onTogglePlayPause,
-                modifier = Modifier.weight(1f),
-            )
-        }
-    }
-}
-
-/**
  * Two prompts side by side, each under its own take.
  *
- * The case where the swipe is a judgement about wording rather than about a render, so each
- * sentence gets half the card. It is also the case the 48-character filename truncation creates
- * when two unrelated cues collide on a key, hence the warning above them.
+ * Always both, because the swipe is a two-way choice. When the sentences differ it is also the
+ * case the 48-character filename truncation creates when two unrelated cues collide on a key,
+ * hence the warning above them.
  */
 @Composable
-private fun RivalPrompts(
+private fun PairPrompts(
     duel: AbDuel,
     state: AbTestUiState,
     nowPlaying: NowPlaying,
@@ -556,18 +471,23 @@ private fun RivalPrompts(
     onRead: (FullPrompt) -> Unit,
 ) {
     val sides = listOf("Take A" to duel.a, "Take B" to duel.b)
-    val prompts = sides.map { (_, take) -> state.prompts[take.driveId] }
+    val prompts = state.cardPrompts ?: sides.map { null }
     Column(Modifier.fillMaxSize()) {
-        // Short on purpose: on a narrow phone every line of it is a line the prompts lose. The
-        // cause - two cues whose truncated filenames collided - is in AbGrouping for whoever asks.
-        Text(
-            "Different prompts - these may be two cues whose filenames collided.",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.error,
-        )
+        if (state.mixedPrompts) {
+            // Short on purpose: on a narrow phone every line of it is a line the prompts lose. The
+            // cause - two cues whose truncated filenames collided - is in AbGrouping for whoever asks.
+            Text(
+                "Different prompts - these may be two cues whose filenames collided.",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
         // The controls get a row of their own above the prompts rather than one per column, so
         // the prompt area is a single rectangle and both sentences can be fitted into it together.
-        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            Modifier.padding(top = if (state.mixedPrompts) 8.dp else 0.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
             TakeControl(
                 label = "A",
                 take = duel.a,
@@ -588,7 +508,13 @@ private fun RivalPrompts(
             )
         }
         FittedPrompts(
-            texts = prompts.map { it ?: "No prompt could be read for this take" },
+            texts = prompts.map { prompt ->
+                prompt ?: if (state.loadingPrompts) {
+                    "Reading the prompt…"
+                } else {
+                    "No prompt could be read for this take"
+                }
+            },
             onRead = { index ->
                 val (owner, take) = sides[index]
                 val prompt = prompts[index]
@@ -626,7 +552,7 @@ private fun FittedPrompts(
 ) {
     // A prompt at the generator's cap has lost its tail; the ellipsis says the cut is not ours.
     val shown = texts.map(::withCapMark)
-    BoxWithConstraints(modifier.fillMaxWidth()) {
+    BoxWithConstraints(modifier.fillMaxSize()) {
         val density = LocalDensity.current
         val gapPx = with(density) { COLUMN_GAP.roundToPx() }
         val columnWidth = ((constraints.maxWidth - gapPx * (shown.size - 1)) / shown.size)
@@ -646,6 +572,7 @@ private fun FittedPrompts(
                         style = fit.style,
                         maxLines = fit.maxLines[index],
                         overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth(),
                     )
                     if (fit.cut[index]) {
                         Text(
@@ -714,9 +641,9 @@ private fun rememberPromptFit(texts: List<String>, width: Int, height: Int): Pro
 
 /** A prompt opened to be read in full, and whose it is. */
 private data class FullPrompt(
-    /** "Take A", "Take B", or "Takes A and B" when the pair share it. */
+    /** "Take A" or "Take B". */
     val owner: String,
-    /** The owning take's fingerprint; null when the prompt belongs to both, so no one take is named. */
+    /** The owning take's fingerprint. */
     val fingerprint: String?,
     /** The prompt - or the filename, when no prompt could be read. */
     val text: String,
