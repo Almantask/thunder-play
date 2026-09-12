@@ -214,6 +214,23 @@ class AbTestViewModel @Inject constructor(
         player.playQueue(pair, pair.indexOfFirst { it.driveId == driveId }.coerceAtLeast(0))
     }
 
+    /**
+     * Plays a judged take from the Results list.
+     *
+     * The queue is the section the row sits in - the keepers, the ties, or the also-rans - so Next
+     * stays inside the list being reviewed rather than jumping from a winner into something that
+     * was set aside. Tapping the take that is already sounding pauses it, the same as on the card.
+     */
+    fun playResults(section: List<TrackEntity>, driveId: String) {
+        val index = section.indexOfFirst { it.driveId == driveId }
+        if (index < 0) return
+        if (player.nowPlaying.value.mediaId == driveId) {
+            player.togglePlayPause()
+            return
+        }
+        player.playQueue(section, index)
+    }
+
     /** Carries audio into the next pair, but never starts it: a silent screen stays silent. */
     private fun follow(duel: AbDuel?, driveId: String?) {
         if (duel == null || driveId == null) return
@@ -222,10 +239,11 @@ class AbTestViewModel @Inject constructor(
     }
 
     /**
-     * Suppresses crossfading while judging, and restores it on the way out.
+     * Suppresses crossfading while the Judge card is on screen, and restores it otherwise.
      *
      * Blending two takes of one cue overlaps them, which is exactly what makes a comparison
-     * impossible - and manual Next blends by default.
+     * impossible - and manual Next blends by default. Results is just listening, so the ordinary
+     * crossfade belongs there.
      */
     fun suppressCrossfade(suppress: Boolean) =
         player.setCrossfadeOverride(if (suppress) 0 else null)
