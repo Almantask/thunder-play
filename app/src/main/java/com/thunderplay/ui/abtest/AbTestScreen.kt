@@ -36,7 +36,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Balance
 import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PauseCircle
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Snooze
 import androidx.compose.material3.Button
@@ -114,9 +116,13 @@ fun AbTestScreen(viewModel: AbTestViewModel = hiltViewModel()) {
     val nowPlaying by viewModel.player.nowPlaying.collectAsStateWithLifecycle()
     val snackbars = remember { SnackbarHostState() }
 
-    // Scoped to the screen, so it cannot leak a permanently silenced crossfade if this dies badly.
+    // Judging blends competing takes, which makes the comparison impossible. Reviewing winners
+    // is ordinary listening, so the crossfade comes back on that tab. Scoped to the screen so
+    // a crash cannot leak a permanently silenced fade.
+    LaunchedEffect(state.tab) {
+        viewModel.suppressCrossfade(state.tab == AbTab.Judge)
+    }
     DisposableEffect(Unit) {
-        viewModel.suppressCrossfade(true)
         onDispose { viewModel.suppressCrossfade(false) }
     }
 
@@ -187,7 +193,11 @@ fun AbTestScreen(viewModel: AbTestViewModel = hiltViewModel()) {
 
             when (state.tab) {
                 AbTab.Judge -> Judge(state, nowPlaying, viewModel)
-                AbTab.Results -> Results(state)
+                AbTab.Results -> Results(
+                    state = state,
+                    nowPlaying = nowPlaying,
+                    onPlay = viewModel::playResults,
+                )
             }
         }
     }
@@ -823,7 +833,11 @@ private fun KeepButton(
 }
 
 @Composable
-private fun Results(state: AbTestUiState) {
+private fun Results(
+    state: AbTestUiState,
+    nowPlaying: NowPlaying,
+    onPlay: (List<TrackEntity>, String) -> Unit,
+) {
     if (state.good.isEmpty() && state.drawn.isEmpty() && state.bad.isEmpty()) {
         Empty("Nothing judged yet.")
         return
@@ -831,27 +845,67 @@ private fun Results(state: AbTestUiState) {
 
     LazyColumn(Modifier.fillMaxSize()) {
         item { Section("Kept (${state.good.size})") }
-        items(state.good, key = { it.driveId }) { JudgedRow(it, kept = true) }
+        items(state.good, key = { it.driveId }) { track ->
+            JudgedRow(
+                track = track,
+                kept = true,
+                nowPlaying = nowPlaying,
+                onPlay = { onPlay(state.good, track.driveId) },
+            )
+        }
         if (state.drawn.isNotEmpty()) {
             item { HorizontalDivider() }
             item { Section("Kept as a tie (${state.drawn.size})") }
-            items(state.drawn, key = { it.driveId }) { JudgedRow(it, kept = true) }
+            items(state.drawn, key = { it.driveId }) { track ->
+                JudgedRow(
+                    track = track,
+                    kept = true,
+                    nowPlaying = nowPlaying,
+                    onPlay = { onPlay(state.drawn, track.driveId) },
+                )
+            }
         }
         item { HorizontalDivider() }
         item { Section("Set aside (${state.bad.size})") }
-        items(state.bad, key = { it.driveId }) { JudgedRow(it, kept = false) }
+        items(state.bad, key = { it.driveId }) { track ->
+            JudgedRow(
+                track = track,
+                kept = false,
+                nowPlaying = nowPlaying,
+                onPlay = { onPlay(state.bad, track.driveId) },
+            )
+        }
     }
 }
 
 @Composable
-private fun JudgedRow(track: TrackEntity, kept: Boolean) {
+private fun JudgedRow(
+    track: TrackEntity,
+    kept: Boolean,
+    nowPlaying: NowPlaying,
+    onPlay: () -> Unit,
+) {
+    val current = nowPlaying.mediaId == track.driveId
+    val playing = current && nowPlaying.isPlaying
     ListItem(
+        modifier = Modifier.clickable(onClickLabel = if (playing) "Pause" else "Play") { onPlay() },
         leadingContent = if (kept) {
             { Icon(Icons.Default.EmojiEvents, contentDescription = "Kept") }
         } else {
             null
         },
-        headlineContent = { Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        headlineContent = {
+            Text(
+                track.title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = if (current) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+            )
+        },
         supportingContent = track.abPrompt?.let {
             {
                 Text(
@@ -859,6 +913,14 @@ private fun JudgedRow(track: TrackEntity, kept: Boolean) {
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        },
+        trailingContent = {
+            IconButton(onClick = onPlay) {
+                Icon(
+                    if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (playing) "Pause" else "Play",
                 )
             }
         },
