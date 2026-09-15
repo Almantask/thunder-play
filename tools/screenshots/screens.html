@@ -1,0 +1,1193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=412, initial-scale=1">
+<title>Thunder Play screens</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0..1,0&display=block" rel="stylesheet">
+<style>
+  :root {
+    --primary: #9FC9FF;
+    --on-primary: #003258;
+    --primary-container: #084586;
+    --on-primary-container: #D4E3FF;
+    --secondary: #BBC7DB;
+    --secondary-container: #3B4858;
+    --on-secondary-container: #D7E3F7;
+    --tertiary: #D9BDE2;
+    --bg: #111318;
+    --surface: #111318;
+    --surface-low: #191C20;
+    --surface-container: #1D2024;
+    --surface-high: #282A2F;
+    --surface-highest: #33353A;
+    --on-surface: #E1E2E8;
+    --on-variant: #C3C6CF;
+    --outline: #8D9199;
+    --outline-variant: #43474E;
+    --error: #FFB4AB;
+    --nav: 80px;
+    --status: 32px;
+    --bar: 64px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 412px;
+    height: 892px;
+    overflow: hidden;
+    background: #000;
+    color: var(--on-surface);
+    font-family: Roboto, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .material-symbols-rounded {
+    font-family: "Material Symbols Rounded";
+    font-weight: 400;
+    font-style: normal;
+    font-size: 24px;
+    line-height: 1;
+    letter-spacing: normal;
+    display: inline-block;
+    font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+    user-select: none;
+  }
+  .fill { font-variation-settings: "FILL" 1, "wght" 400, "GRAD" 0, "opsz" 24; }
+  .sm { font-size: 18px; }
+  .xs { font-size: 16px; }
+  .lg { font-size: 32px; }
+  .xl { font-size: 40px; }
+  [data-screen] { display: none; width: 412px; height: 892px; }
+  [data-screen].show { display: flex; flex-direction: column; background: var(--bg); }
+  .status {
+    height: var(--status);
+    padding: 8px 22px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 14px;
+    font-weight: 500;
+    flex: none;
+  }
+  .status-right { display: flex; align-items: center; gap: 6px; }
+  .status-right .material-symbols-rounded { font-size: 17px; }
+  .top {
+    height: var(--bar);
+    display: flex;
+    align-items: center;
+    padding: 0 4px 0 16px;
+    gap: 4px;
+    flex: none;
+  }
+  .top h1 { font-size: 22px; font-weight: 400; letter-spacing: 0; flex: 1; }
+  .icon-btn {
+    width: 48px; height: 48px;
+    display: grid; place-items: center;
+    color: var(--on-surface);
+  }
+  .filters {
+    display: flex;
+    gap: 8px;
+    padding: 4px 12px 8px;
+    overflow: hidden;
+    flex: none;
+  }
+  .chip {
+    height: 32px;
+    border-radius: 8px;
+    padding: 0 8px 0 12px;
+    border: 1px solid var(--outline);
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--on-variant);
+    white-space: nowrap;
+    background: transparent;
+  }
+  .chip.active {
+    background: var(--secondary-container);
+    border-color: transparent;
+    color: var(--on-secondary-container);
+  }
+  .chip.clear {
+    border-color: var(--outline);
+    color: var(--on-surface);
+    padding-right: 12px;
+  }
+  .count {
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    color: var(--on-variant);
+    padding: 4px 16px 8px;
+    flex: none;
+  }
+  .list { flex: 1; overflow: hidden; }
+  .row {
+    display: flex;
+    align-items: center;
+    padding: 8px 4px 8px 16px;
+    gap: 12px;
+    min-height: 80px;
+  }
+  .row .lead { color: var(--on-variant); width: 24px; display: grid; place-items: center; flex: none; }
+  .row .body { flex: 1; min-width: 0; }
+  .row .title {
+    font-size: 16px;
+    font-weight: 400;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .row .title.playing { color: var(--primary); }
+  .row .sub {
+    font-size: 14px;
+    color: var(--on-variant);
+    margin-top: 1px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .stars { display: flex; margin-top: 2px; color: var(--primary); }
+  .stars .material-symbols-rounded { font-size: 18px; }
+  .stars .off { color: var(--on-variant); opacity: 0.55; }
+  .row .trail {
+    display: flex;
+    align-items: center;
+    color: var(--on-variant);
+    flex: none;
+  }
+  .plays { font-size: 12px; font-weight: 500; padding-right: 0; }
+  .mini {
+    background: var(--surface-container);
+    flex: none;
+  }
+  .mini .prog {
+    height: 4px;
+    background: var(--surface-highest);
+  }
+  .mini .prog > i {
+    display: block;
+    height: 100%;
+    width: 62%;
+    background: var(--primary);
+  }
+  .mini .inner {
+    display: flex;
+    align-items: center;
+    padding: 8px 4px 8px 12px;
+    gap: 4px;
+  }
+  .mini .meta { flex: 1; min-width: 0; }
+  .mini .meta strong {
+    display: block;
+    font-size: 14px;
+    font-weight: 400;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mini .meta span {
+    font-size: 12px;
+    color: var(--on-variant);
+  }
+  .nav {
+    height: var(--nav);
+    display: flex;
+    background: var(--surface-container);
+    padding: 12px 0 16px;
+    flex: none;
+  }
+  .nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--on-variant);
+  }
+  .nav-item.active { color: var(--on-surface); }
+  .nav-item .pill {
+    width: 64px;
+    height: 32px;
+    border-radius: 16px;
+    display: grid;
+    place-items: center;
+  }
+  .nav-item.active .pill { background: var(--secondary-container); color: var(--on-secondary-container); }
+  .nav-item.active .pill .material-symbols-rounded { font-variation-settings: "FILL" 1, "wght" 400, "GRAD" 0, "opsz" 24; }
+  .seg-row { padding: 8px 16px; flex: none; }
+  .seg {
+    display: flex;
+    width: 100%;
+    height: 40px;
+    border: 1px solid var(--outline);
+    border-radius: 20px;
+    overflow: hidden;
+  }
+  .seg.narrow { width: auto; display: inline-flex; }
+  .seg button {
+    flex: 1;
+    border: 0;
+    background: transparent;
+    color: var(--on-surface);
+    font: 500 14px Roboto, sans-serif;
+    padding: 0 16px;
+    position: relative;
+  }
+  .seg button + button { border-left: 1px solid var(--outline); }
+  .seg button.on { background: var(--secondary-container); color: var(--on-secondary-container); }
+  .section {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--primary);
+    padding: 12px 16px 4px;
+  }
+  .hist-row {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    gap: 12px;
+  }
+  .hist-row .body { flex: 1; min-width: 0; }
+  .hist-row .title { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hist-row .sub { font-size: 14px; color: var(--on-variant); }
+  .hist-row .trail { font-size: 12px; font-weight: 500; color: var(--on-variant); white-space: nowrap; }
+  .summary { font-size: 14px; padding: 4px 16px 8px; }
+  .np { flex: 1; display: flex; flex-direction: column; padding: 8px 24px 16px; }
+  .np-top { display: flex; align-items: center; }
+  .np h2 {
+    font-size: 24px;
+    font-weight: 400;
+    line-height: 1.25;
+    margin: 8px 0 6px;
+  }
+  .np .subhead { font-size: 14px; color: var(--on-variant); margin-bottom: 12px; }
+  .np .rate-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+  .np .rate-row .stars .material-symbols-rounded { font-size: 20px; }
+  .np .played { font-size: 12px; font-weight: 500; color: var(--on-variant); }
+  .slider {
+    height: 4px;
+    background: var(--surface-highest);
+    border-radius: 2px;
+    margin: 16px 0 6px;
+    position: relative;
+  }
+  .slider > i {
+    display: block;
+    width: 62%;
+    height: 100%;
+    background: var(--primary);
+    border-radius: 2px;
+  }
+  .slider > b {
+    position: absolute;
+    left: 62%;
+    top: 50%;
+    width: 20px;
+    height: 20px;
+    margin: -10px 0 0 -10px;
+    border-radius: 50%;
+    background: var(--primary);
+  }
+  .times { display: flex; justify-content: space-between; font-size: 11px; color: var(--on-variant); }
+  .transport {
+    display: flex;
+    justify-content: space-evenly;
+    align-items: center;
+    margin: 16px 0 12px;
+  }
+  .transport .on { color: var(--primary); }
+  .details-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    color: var(--primary);
+    font-size: 14px;
+    font-weight: 500;
+    padding: 8px 0;
+    border-top: 1px solid var(--outline-variant);
+    margin-top: auto;
+  }
+  .chips {
+    display: flex;
+    gap: 6px;
+    overflow: hidden;
+    padding: 4px 0 10px;
+  }
+  .assist {
+    height: 32px;
+    border: 1px solid var(--outline-variant);
+    border-radius: 8px;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    font-size: 13px;
+    color: var(--on-variant);
+    white-space: nowrap;
+  }
+  .kv { display: flex; justify-content: space-between; gap: 16px; padding: 2px 0; }
+  .kv dt { font-size: 12px; font-weight: 500; color: var(--on-variant); flex: none; }
+  .kv dd { font-size: 12px; text-align: right; color: var(--on-surface); }
+  .fab {
+    position: absolute;
+    right: 16px;
+    bottom: calc(var(--nav) + 16px);
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+    background: var(--primary-container);
+    color: var(--on-primary-container);
+    display: grid;
+    place-items: center;
+    box-shadow: 0 4px 8px rgba(0,0,0,.4);
+  }
+  .phone { position: relative; }
+  .pl-lead {
+    width: 48px; height: 48px;
+    display: grid; place-items: center;
+    color: var(--on-surface);
+    flex: none;
+  }
+  .linkish { display: flex; align-items: center; gap: 4px; color: var(--on-variant); font-size: 14px; }
+  .set-h {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--primary);
+    padding: 16px 16px 4px;
+  }
+  .set-row {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    gap: 12px;
+    min-height: 64px;
+  }
+  .set-row .body { flex: 1; }
+  .set-row .title { font-size: 16px; }
+  .set-row .sub { font-size: 14px; color: var(--on-variant); margin-top: 2px; }
+  .switch {
+    width: 52px; height: 32px; border-radius: 16px;
+    background: var(--primary);
+    position: relative; flex: none;
+  }
+  .switch.off { background: var(--surface-highest); }
+  .switch i {
+    position: absolute; top: 6px; right: 6px;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--on-primary);
+  }
+  .switch.off i { right: auto; left: 6px; background: var(--on-variant); }
+  .interval {
+    text-align: right;
+    padding: 0 16px 8px;
+    color: var(--primary);
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .crossfade { padding: 8px 16px 16px; }
+  .crossfade label { font-size: 16px; display: block; margin-bottom: 10px; }
+  .crossfade .bar {
+    height: 4px;
+    background: var(--surface-highest);
+    border-radius: 2px;
+    position: relative;
+    margin: 8px 0;
+  }
+  .crossfade .bar i {
+    display: block; width: 25%; height: 100%; background: var(--primary); border-radius: 2px;
+  }
+  .crossfade .bar b {
+    position: absolute; left: 25%; top: 50%; width: 20px; height: 20px;
+    margin: -10px 0 0 -10px; border-radius: 50%; background: var(--primary);
+  }
+  .crossfade p { font-size: 12px; color: var(--on-variant); }
+  hr.div { border: 0; border-top: 1px solid var(--outline-variant); margin: 4px 0; }
+  .ab-head {
+    display: flex;
+    align-items: center;
+    padding: 6px 8px 6px 16px;
+    gap: 8px;
+    flex: none;
+  }
+  .ab-prog { padding: 0 16px 8px; flex: none; }
+  .ab-prog .line { display: flex; align-items: center; }
+  .ab-prog .line strong { font-size: 14px; font-weight: 500; }
+  .ab-prog .line span { margin-left: auto; font-size: 12px; color: var(--on-variant); }
+  .ab-prog .bar {
+    height: 4px; background: var(--surface-highest); border-radius: 2px; margin-top: 4px;
+  }
+  .ab-prog .bar i { display: block; width: 64%; height: 100%; background: var(--primary); }
+  .deck {
+    flex: 1;
+    padding: 6px 10px 8px;
+    position: relative;
+    min-height: 0;
+  }
+  .behind {
+    position: absolute;
+    inset: 0 18px 18px;
+    background: var(--surface-high);
+    border-radius: 12px;
+    opacity: .5;
+    transform: scale(.94) translateY(-8px);
+  }
+  .card {
+    position: relative;
+    height: 100%;
+    background: var(--surface-container);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.45);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+  }
+  .card .cat { font-size: 12px; font-weight: 500; color: var(--on-variant); }
+  .takes { display: flex; gap: 10px; margin-top: 10px; }
+  .take {
+    flex: 1;
+    background: var(--surface-high);
+    border: 1px solid var(--outline-variant);
+    border-radius: 16px;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .take.current { border: 2px solid var(--primary); padding: 7px 9px; }
+  .take .who { font-size: 14px; font-weight: 500; }
+  .take .fp { font-size: 11px; color: var(--on-variant); }
+  .prompts { display: flex; gap: 10px; flex: 1; margin-top: 10px; min-height: 0; }
+  .prompt {
+    flex: 1;
+    font-size: 22px;
+    line-height: 1.28;
+    letter-spacing: 0;
+    font-weight: 400;
+  }
+  .answers { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+  .keep {
+    flex: 1;
+    height: 40px;
+    border: 0;
+    border-radius: 20px;
+    background: var(--primary);
+    color: var(--on-primary);
+    font: 500 14px Roboto, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+  }
+  .keep .material-symbols-rounded { font-size: 18px; color: var(--on-primary); }
+  .tie {
+    height: 40px;
+    border: 1px solid var(--outline);
+    border-radius: 20px;
+    background: transparent;
+    color: var(--primary);
+    font: 500 14px Roboto, sans-serif;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .hint {
+    text-align: center;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--on-variant);
+    margin-top: 6px;
+  }
+  .term-row .delta { color: var(--primary); font-size: 14px; font-weight: 500; }
+  .term-row .meh { color: var(--on-variant); font-size: 14px; font-weight: 500; }
+
+  /* Web player (light) */
+  .browser { background: #e8e8ea; }
+  .chrome {
+    background: #fff;
+    padding: 8px 12px 10px;
+    flex: none;
+  }
+  .omnibox {
+    height: 40px;
+    border-radius: 20px;
+    background: #f0f0f3;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 14px;
+    color: #444;
+    font-size: 13px;
+  }
+  .web-body {
+    flex: 1;
+    background: #f7f7f8;
+    color: #16161a;
+    display: flex;
+    flex-direction: column;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    position: relative;
+    padding-bottom: 128px;
+  }
+  .web-body header { padding: 24px 20px 12px; }
+  .web-body h1 { font-size: 22px; letter-spacing: -0.01em; margin-bottom: 4px; }
+  .web-body .meta { color: #6b6b76; font-size: 13px; }
+  .web-body ol { list-style: none; padding: 0 12px; }
+  .web-body li {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px; border-radius: 10px;
+    background: #fff; border: 1px solid #e3e3e7;
+    margin-bottom: 8px;
+  }
+  .web-body li.cur { background: #e8effa; border-color: #2c5ea8; }
+  .web-body .num { color: #6b6b76; min-width: 22px; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .web-body .t strong { display: block; font-weight: 550; font-size: 15px; }
+  .web-body .t span { color: #6b6b76; font-size: 12.5px; }
+  .web-foot {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    background: #fff; border-top: 1px solid #e3e3e7;
+    padding: 12px 16px 20px;
+  }
+  .web-bar { display: flex; align-items: center; gap: 14px; }
+  .web-bar .now { flex: 1; min-width: 0; }
+  .web-bar .now strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .web-bar .now span { color: #6b6b76; font-size: 12.5px; }
+  .circ {
+    width: 44px; height: 44px; border-radius: 50%;
+    border: 1px solid #e3e3e7; background: #fff;
+    display: grid; place-items: center; color: #16161a; font-size: 18px;
+  }
+  .circ.primary { background: #2c5ea8; border-color: #2c5ea8; color: #fff; }
+  .fake-audio {
+    height: 32px; margin-top: 10px; border-radius: 4px;
+    background: linear-gradient(#eee, #f7f7f7);
+    border: 1px solid #e3e3e7;
+    display: flex; align-items: center; padding: 0 8px; gap: 8px;
+    color: #6b6b76; font-size: 11px;
+  }
+  .fake-audio .a-bar { flex: 1; height: 4px; background: #ddd; border-radius: 2px; }
+  .fake-audio .a-bar i { display: block; width: 38%; height: 100%; background: #2c5ea8; border-radius: 2px; }
+</style>
+</head>
+<body>
+<!-- LIBRARY -->
+<section data-screen="library" class="phone">
+  <div class="status">
+    <span>12:42</span>
+    <span class="status-right">
+      <span class="material-symbols-rounded fill xs">wifi</span>
+      <span class="material-symbols-rounded fill xs">signal_cellular_4_bar</span>
+      <span class="material-symbols-rounded fill xs">battery_full</span>
+    </span>
+  </div>
+  <div class="top">
+    <h1>Library</h1>
+    <div class="icon-btn"><span class="material-symbols-rounded">search</span></div>
+    <div class="icon-btn"><span class="material-symbols-rounded">shuffle</span></div>
+    <div class="icon-btn"><span class="material-symbols-rounded">sync_alt</span></div>
+    <div class="icon-btn"><span class="material-symbols-rounded">refresh</span></div>
+  </div>
+  <div class="filters">
+    <div class="chip active">4+ stars <span class="material-symbols-rounded sm">arrow_drop_down</span></div>
+    <div class="chip active">Beast Hunt <span class="material-symbols-rounded sm">arrow_drop_down</span></div>
+    <div class="chip active">III <span class="material-symbols-rounded sm">arrow_drop_down</span></div>
+    <div class="chip">Highest rated <span class="material-symbols-rounded sm">arrow_drop_down</span></div>
+    <div class="chip clear"><span class="material-symbols-rounded xs">close</span> Clear</div>
+  </div>
+  <div class="count">6 tracks - 3 downloaded</div>
+  <div class="list">
+    <div class="row">
+      <div class="lead"><span class="material-symbols-rounded fill">offline_pin</span></div>
+      <div class="body">
+        <div class="title playing">instrumental-hunt-tracking-90s-1660a792</div>
+        <div class="sub">Beast Hunt / III · 1:30</div>
+        <div class="stars">
+          <span class="material-symbols-rounded fill">star</span>
+          <span class="material-symbols-rounded fill">star</span>
+          <span class="material-symbols-rounded fill">star</span>
+          <span class="material-symbols-rounded fill">star</span>
+          <span class="material-symbols-rounded fill">star</span>
+        </div>
+      </div>
+      <div class="trail"><span class="plays">12</span><span class="icon-btn"><span class="material-symbols-rounded">more_vert</span></span></div>
+    </div>
+    <div class="row">
+      <div class="lead"><span class="material-symbols-rounded fill">offline_pin</span></div>
+      <div class="body">
+        <div class="title">tribal-drums-chase-bed-90s-8f3a21c1</div>
+        <div class="sub">Beast Hunt / III · 1:28</div>
+        <div class="stars">
+          <span class="material-symbols-rounded fill">star</span>
+          <span class="material-symbols-rounded fill">star</span>
+          <span class="material-symbols-rounded fill">star</span>
+          <span class="material-symbols-rounded fill">star</span>
+          <span class="material-symbols-rounded fill">star</span>
+        </div>
+      </div>
+      <div class="trail"><span class="plays">9</span><span class="icon-btn"><span class="material-symbols-rounded">more_vert</span></span></div>
+    </div>
+    <div class="row">
+      <div class="lead"><span class="material-symbols-rounded fill">offline_pin</span></div>
+      <div class="body">
+        <div class="title">low-brass-pursuit-90s-c52a573a</div>
+        <div class="sub">Beast Hunt / III · 1:32</div>
+        <div class="stars">
+          <span class="material-symbols-rounded fill">star</span>
+          <span class="material-symbols-rounded fill">star</span>
+          <span class="material-symbols-rounded fill">star</span>
+          <span class="material-symbols-rounded fill">star</span>
+          <span class="material-symbols-rounded">star</span>
+        </div>
+      </div>
+      <div class="trail"><span class="plays">6</span><span class="icon-btn"><span class="material-symbols-rounded">more_vert</span></span></div>
+    </div>
+    <div class="row">
+      <div class="lead"><span class="material-symbols-rounded">cloud_download</span></div>
+      <div class="body">
+        <div class="title">percussive-trail-strings-90s-a91b0e44</div>
+        <div class="sub">Beast Hunt / III · 1:25</div>
+        <div class="stars">
+          <span class="material-symbols-rounded fill">star</span>
+          <span class="material-symbols-rounded fill">star</span>
+          <span class="material-symbols-rounded fill">star</span>
+          <span class="material-symbols-rounded fill">star</span>
+          <span class="material-symbols-rounded">star</span>
+        </div>
+      </div>
+      <div class="trail"><span class="plays">4</span><span class="icon-btn"><span class="material-symbols-rounded">more_vert</span></span></div>
+    </div>
+    <div class="row">
+      <div class="lead"><span class="material-symbols-rounded">cloud_download</span></div>
+      <div class="body">
+        <div class="title">war-horn-staccato-90s-670a6ef0</div>
+        <div class="sub">Beast Hunt / III · 1:30</div>
+        <div class="stars">
+          <span class="material-symbols-rounded fill">star</span>
+          <span class="material-symbols-rounded fill">star</span>
+          <span class="material-symbols-rounded fill">star</span>
+          <span class="material-symbols-rounded fill">star</span>
+          <span class="material-symbols-rounded">star</span>
+        </div>
+      </div>
+      <div class="trail"><span class="plays">3</span><span class="icon-btn"><span class="material-symbols-rounded">more_vert</span></span></div>
+    </div>
+  </div>
+  <div class="mini">
+    <div class="prog"><i></i></div>
+    <div class="inner">
+      <div class="meta">
+        <strong>instrumental-hunt-tracking-90s-1660a792</strong>
+        <span>Beast Hunt / III</span>
+      </div>
+      <div class="icon-btn"><span class="material-symbols-rounded fill">pause</span></div>
+      <div class="icon-btn"><span class="material-symbols-rounded fill">skip_next</span></div>
+    </div>
+  </div>
+  <nav class="nav">
+    <div class="nav-item active"><div class="pill"><span class="material-symbols-rounded">library_music</span></div>Library</div>
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">queue_music</span></div>Playlists</div>
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">history</span></div>History</div>
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">compare</span></div>A/B</div>
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">settings</span></div>Settings</div>
+  </nav>
+</section>
+
+<!-- NOW PLAYING -->
+<section data-screen="now-playing" class="phone">
+  <div class="status">
+    <span>12:42</span>
+    <span class="status-right">
+      <span class="material-symbols-rounded fill xs">wifi</span>
+      <span class="material-symbols-rounded fill xs">signal_cellular_4_bar</span>
+      <span class="material-symbols-rounded fill xs">battery_full</span>
+    </span>
+  </div>
+  <div class="np">
+    <div class="np-top">
+      <div class="icon-btn" style="margin-left:-12px"><span class="material-symbols-rounded">keyboard_arrow_down</span></div>
+      <div style="flex:1"></div>
+      <div class="icon-btn" style="margin-right:-12px"><span class="material-symbols-rounded">queue_music</span></div>
+    </div>
+    <div style="flex:1"></div>
+    <h2>instrumental-hunt-tracking-90s-1660a792</h2>
+    <div class="subhead">Beast Hunt / III</div>
+    <div class="rate-row">
+      <div class="stars">
+        <span class="material-symbols-rounded fill">star</span>
+        <span class="material-symbols-rounded fill">star</span>
+        <span class="material-symbols-rounded fill">star</span>
+        <span class="material-symbols-rounded fill">star</span>
+        <span class="material-symbols-rounded fill">star</span>
+      </div>
+      <span class="played">played 12 times</span>
+    </div>
+    <div class="slider"><i></i><b></b></div>
+    <div class="times"><span>0:56</span><span>1:30</span></div>
+    <div class="transport">
+      <span class="material-symbols-rounded on">shuffle</span>
+      <span class="material-symbols-rounded lg fill">skip_previous</span>
+      <span class="material-symbols-rounded xl fill">pause</span>
+      <span class="material-symbols-rounded lg fill">skip_next</span>
+      <span class="material-symbols-rounded on">repeat</span>
+    </div>
+    <div style="flex:1"></div>
+    <div class="details-toggle">Hide details <span class="material-symbols-rounded sm">expand_less</span></div>
+    <div class="chips">
+      <div class="assist">Taiko</div>
+      <div class="assist">Horns</div>
+      <div class="assist">Low strings</div>
+      <div class="assist">Percussion</div>
+    </div>
+    <dl>
+      <div class="kv"><dt>Prompt</dt><dd>tribal percussion and low brass tracking a wounded beast through dense forest</dd></div>
+      <div class="kv"><dt>Genre</dt><dd>Instrumental</dd></div>
+      <div class="kv"><dt>Category</dt><dd>Beast Hunt</dd></div>
+      <div class="kv"><dt>Level</dt><dd>III</dd></div>
+      <div class="kv"><dt>Duration</dt><dd>1:30</dd></div>
+      <div class="kv"><dt>Audio</dt><dd>AAC · 192 kbps · 44 kHz · stereo</dd></div>
+    </dl>
+  </div>
+  <nav class="nav">
+    <div class="nav-item active"><div class="pill"><span class="material-symbols-rounded">library_music</span></div>Library</div>
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">queue_music</span></div>Playlists</div>
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">history</span></div>History</div>
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">compare</span></div>A/B</div>
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">settings</span></div>Settings</div>
+  </nav>
+</section>
+
+<!-- PLAYLISTS -->
+<section data-screen="playlists" class="phone">
+  <div class="status">
+    <span>12:42</span>
+    <span class="status-right">
+      <span class="material-symbols-rounded fill xs">wifi</span>
+      <span class="material-symbols-rounded fill xs">signal_cellular_4_bar</span>
+      <span class="material-symbols-rounded fill xs">battery_full</span>
+    </span>
+  </div>
+  <div class="top"><h1>Playlists</h1></div>
+  <div class="list">
+    <div class="row">
+      <div class="pl-lead"><span class="material-symbols-rounded fill">play_arrow</span></div>
+      <div class="body">
+        <div class="title">Beast Hunt - III - 4+ stars</div>
+        <div class="linkish"><span class="material-symbols-rounded xs">link</span>6 tracks · link expires in 5d</div>
+      </div>
+      <div class="trail"><span class="icon-btn"><span class="material-symbols-rounded">more_vert</span></span></div>
+    </div>
+    <div class="row">
+      <div class="pl-lead"><span class="material-symbols-rounded fill">play_arrow</span></div>
+      <div class="body">
+        <div class="title">Ancient Discovery beds</div>
+        <div class="sub">18 tracks</div>
+      </div>
+      <div class="trail"><span class="icon-btn"><span class="material-symbols-rounded">more_vert</span></span></div>
+    </div>
+    <div class="row">
+      <div class="pl-lead"><span class="material-symbols-rounded fill">play_arrow</span></div>
+      <div class="body">
+        <div class="title">Session — Court</div>
+        <div class="sub">4 tracks</div>
+      </div>
+      <div class="trail"><span class="icon-btn"><span class="material-symbols-rounded">more_vert</span></span></div>
+    </div>
+    <div class="row">
+      <div class="pl-lead"><span class="material-symbols-rounded fill">play_arrow</span></div>
+      <div class="body">
+        <div class="title">Favourites</div>
+        <div class="sub">11 tracks</div>
+      </div>
+      <div class="trail"><span class="icon-btn"><span class="material-symbols-rounded">more_vert</span></span></div>
+    </div>
+  </div>
+  <div class="fab"><span class="material-symbols-rounded">add</span></div>
+  <nav class="nav">
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">library_music</span></div>Library</div>
+    <div class="nav-item active"><div class="pill"><span class="material-symbols-rounded">queue_music</span></div>Playlists</div>
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">history</span></div>History</div>
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">compare</span></div>A/B</div>
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">settings</span></div>Settings</div>
+  </nav>
+</section>
+
+<!-- HISTORY -->
+<section data-screen="history" class="phone">
+  <div class="status">
+    <span>12:42</span>
+    <span class="status-right">
+      <span class="material-symbols-rounded fill xs">wifi</span>
+      <span class="material-symbols-rounded fill xs">signal_cellular_4_bar</span>
+      <span class="material-symbols-rounded fill xs">battery_full</span>
+    </span>
+  </div>
+  <div class="top"><h1>History</h1></div>
+  <div class="seg-row">
+    <div class="seg">
+      <button class="on">Listening</button>
+      <button>Prompts</button>
+    </div>
+  </div>
+  <div class="seg-row">
+    <div class="seg">
+      <button>7 days</button>
+      <button class="on">30 days</button>
+      <button>All time</button>
+    </div>
+  </div>
+  <div class="summary">4h 12m of listening</div>
+  <div class="list">
+    <div class="section">Most played</div>
+    <div class="hist-row">
+      <div class="body">
+        <div class="title">instrumental-hunt-tracking-90s-1660a792</div>
+        <div class="sub">Beast Hunt</div>
+      </div>
+      <div class="trail">12x · 18m</div>
+    </div>
+    <div class="hist-row">
+      <div class="body">
+        <div class="title">tribal-drums-chase-bed-90s-8f3a21c1</div>
+        <div class="sub">Beast Hunt</div>
+      </div>
+      <div class="trail">9x · 13m</div>
+    </div>
+    <div class="hist-row">
+      <div class="body">
+        <div class="title">ancient-ambient-awe-90s-4689f1c8</div>
+        <div class="sub">Aqua</div>
+      </div>
+      <div class="trail">8x · 22m</div>
+    </div>
+    <hr class="div">
+    <div class="section">Recent</div>
+    <div class="hist-row">
+      <div class="body">
+        <div class="title">instrumental-hunt-tracking-90s-1660a792</div>
+        <div class="sub">12 min ago</div>
+      </div>
+      <div class="trail">1m</div>
+    </div>
+    <div class="hist-row">
+      <div class="body">
+        <div class="title">tribal-drums-chase-bed-90s-8f3a21c1</div>
+        <div class="sub">1 h ago</div>
+      </div>
+      <div class="trail">1m</div>
+    </div>
+    <div class="hist-row">
+      <div class="body">
+        <div class="title">low-brass-pursuit-90s-c52a573a</div>
+        <div class="sub">yesterday, 21:04</div>
+      </div>
+      <div class="trail">1m</div>
+    </div>
+  </div>
+  <nav class="nav">
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">library_music</span></div>Library</div>
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">queue_music</span></div>Playlists</div>
+    <div class="nav-item active"><div class="pill"><span class="material-symbols-rounded">history</span></div>History</div>
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">compare</span></div>A/B</div>
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">settings</span></div>Settings</div>
+  </nav>
+</section>
+
+<!-- PROMPTS -->
+<section data-screen="prompts" class="phone">
+  <div class="status">
+    <span>12:42</span>
+    <span class="status-right">
+      <span class="material-symbols-rounded fill xs">wifi</span>
+      <span class="material-symbols-rounded fill xs">signal_cellular_4_bar</span>
+      <span class="material-symbols-rounded fill xs">battery_full</span>
+    </span>
+  </div>
+  <div class="top"><h1>History</h1></div>
+  <div class="seg-row">
+    <div class="seg">
+      <button>Listening</button>
+      <button class="on">Prompts</button>
+    </div>
+  </div>
+  <div class="summary">142 described · 38 rated · library average 3.4★</div>
+  <div class="seg-row">
+    <div class="seg">
+      <button class="on">Prompt words</button>
+      <button>Instruments</button>
+      <button>Genres</button>
+    </div>
+  </div>
+  <div class="list">
+    <div class="section">Rates highest</div>
+    <div class="hist-row term-row">
+      <div class="body">
+        <div class="title">Tribal</div>
+        <div class="sub">8 rated of 14 · A/B 5-1</div>
+      </div>
+      <div class="delta">4.6★  +1.2</div>
+    </div>
+    <div class="hist-row term-row">
+      <div class="body">
+        <div class="title">Percussive</div>
+        <div class="sub">7 rated of 11 · A/B 4-1</div>
+      </div>
+      <div class="delta">4.4★  +1.0</div>
+    </div>
+    <div class="hist-row term-row">
+      <div class="body">
+        <div class="title">Brass</div>
+        <div class="sub">6 rated of 9</div>
+      </div>
+      <div class="delta">4.1★  +0.7</div>
+    </div>
+    <div class="hist-row term-row">
+      <div class="body">
+        <div class="title">Hunt</div>
+        <div class="sub">5 rated of 8</div>
+      </div>
+      <div class="delta">4.0★  +0.6</div>
+    </div>
+    <hr class="div">
+    <div class="section">Rates lowest</div>
+    <div class="hist-row term-row">
+      <div class="body">
+        <div class="title">Drone</div>
+        <div class="sub">9 rated of 22 · A/B 1-6</div>
+      </div>
+      <div class="meh">2.1★  -1.3</div>
+    </div>
+    <div class="hist-row term-row">
+      <div class="body">
+        <div class="title">Pad</div>
+        <div class="sub">5 rated of 12</div>
+      </div>
+      <div class="meh">2.3★  -1.1</div>
+    </div>
+    <div class="hist-row term-row">
+      <div class="body">
+        <div class="title">Choir</div>
+        <div class="sub">4 rated of 7</div>
+      </div>
+      <div class="meh">2.4★  -1.0</div>
+    </div>
+  </div>
+  <nav class="nav">
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">library_music</span></div>Library</div>
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">queue_music</span></div>Playlists</div>
+    <div class="nav-item active"><div class="pill"><span class="material-symbols-rounded">history</span></div>History</div>
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">compare</span></div>A/B</div>
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">settings</span></div>Settings</div>
+  </nav>
+</section>
+
+<!-- A/B TEST -->
+<section data-screen="ab-test" class="phone">
+  <div class="status">
+    <span>12:42</span>
+    <span class="status-right">
+      <span class="material-symbols-rounded fill xs">wifi</span>
+      <span class="material-symbols-rounded fill xs">signal_cellular_4_bar</span>
+      <span class="material-symbols-rounded fill xs">battery_full</span>
+    </span>
+  </div>
+  <div class="ab-head">
+    <div class="seg narrow">
+      <button class="on">Judge</button>
+      <button>Results</button>
+    </div>
+    <div style="flex:1"></div>
+    <div class="icon-btn"><span class="material-symbols-rounded">undo</span></div>
+    <div class="icon-btn"><span class="material-symbols-rounded">snooze</span></div>
+  </div>
+  <div class="ab-prog">
+    <div class="line"><strong>8 cues to judge</strong><span>14 filed</span></div>
+    <div class="bar"><i></i></div>
+  </div>
+  <div class="deck">
+    <div class="behind"></div>
+    <div class="card">
+      <div class="cat">Aqua / I · 1:30</div>
+      <div class="takes">
+        <div class="take current">
+          <span class="material-symbols-rounded fill lg" style="color:var(--primary)">pause_circle</span>
+          <div><div class="who">A</div><div class="fp">4689f1c8</div></div>
+        </div>
+        <div class="take">
+          <span class="material-symbols-rounded fill lg" style="color:var(--primary)">play_circle</span>
+          <div><div class="who">B</div><div class="fp">85904681</div></div>
+        </div>
+      </div>
+      <div class="prompts">
+        <div class="prompt">Ancient marble halls, a distant choir held as slow awe.</div>
+        <div class="prompt">Subterranean cathedral, a single horn over a low drone.</div>
+      </div>
+      <div class="answers">
+        <button class="keep"><span class="material-symbols-rounded">arrow_back</span> Keep A</button>
+        <button class="tie"><span class="material-symbols-rounded sm">balance</span> Tie</button>
+        <button class="keep">Keep B <span class="material-symbols-rounded">arrow_forward</span></button>
+      </div>
+      <div class="hint">Tap a prompt to read it in full · Tie keeps both</div>
+    </div>
+  </div>
+  <div class="mini">
+    <div class="prog"><i style="width:28%"></i></div>
+    <div class="inner">
+      <div class="meta">
+        <strong>ancient-ambient-awe-90s-4689f1c8</strong>
+        <span>Aqua / I</span>
+      </div>
+      <div class="icon-btn"><span class="material-symbols-rounded fill">pause</span></div>
+      <div class="icon-btn"><span class="material-symbols-rounded fill">skip_next</span></div>
+    </div>
+  </div>
+  <nav class="nav">
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">library_music</span></div>Library</div>
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">queue_music</span></div>Playlists</div>
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">history</span></div>History</div>
+    <div class="nav-item active"><div class="pill"><span class="material-symbols-rounded">compare</span></div>A/B</div>
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">settings</span></div>Settings</div>
+  </nav>
+</section>
+
+<!-- SETTINGS -->
+<section data-screen="settings" class="phone">
+  <div class="status">
+    <span>12:42</span>
+    <span class="status-right">
+      <span class="material-symbols-rounded fill xs">wifi</span>
+      <span class="material-symbols-rounded fill xs">signal_cellular_4_bar</span>
+      <span class="material-symbols-rounded fill xs">battery_full</span>
+    </span>
+  </div>
+  <div class="top"><h1>Settings</h1></div>
+  <div class="list">
+    <div class="set-h">Automatic refresh</div>
+    <div class="set-row">
+      <div class="body">
+        <div class="title">Refresh the track list</div>
+        <div class="sub">Checks Drive for new or removed tracks</div>
+      </div>
+      <div class="switch"><i></i></div>
+    </div>
+    <div class="interval">Hourly</div>
+    <hr class="div">
+    <div class="set-h">Automatic sync</div>
+    <div class="set-row">
+      <div class="body">
+        <div class="title">Download new tracks</div>
+        <div class="sub">Pre-fetches anything not already on the device</div>
+      </div>
+      <div class="switch off"><i></i></div>
+    </div>
+    <hr class="div">
+    <div class="set-h">Playback</div>
+    <div class="crossfade">
+      <label>Crossfade: 3.0 seconds</label>
+      <div class="bar"><i></i><b></b></div>
+      <p>Zero turns crossfading off entirely and uses a single player.</p>
+    </div>
+    <hr class="div">
+    <div class="set-h">A/B testing</div>
+    <div class="set-row">
+      <div class="body">
+        <div class="title">Judge rival takes</div>
+        <div class="sub">Adds a tab for picking one keeper per cue and filing the rest</div>
+      </div>
+      <div class="switch"><i></i></div>
+    </div>
+    <hr class="div">
+    <div class="set-h">Connections</div>
+    <div class="set-row">
+      <div class="body">
+        <div class="title">Google Drive</div>
+        <div class="sub">Service account key loaded</div>
+      </div>
+    </div>
+  </div>
+  <nav class="nav">
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">library_music</span></div>Library</div>
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">queue_music</span></div>Playlists</div>
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">history</span></div>History</div>
+    <div class="nav-item"><div class="pill"><span class="material-symbols-rounded">compare</span></div>A/B</div>
+    <div class="nav-item active"><div class="pill"><span class="material-symbols-rounded">settings</span></div>Settings</div>
+  </nav>
+</section>
+
+<!-- WEB PLAYER -->
+<section data-screen="web-player" class="phone browser">
+  <div class="status" style="color:#16161a;background:#fff">
+    <span>12:42</span>
+    <span class="status-right">
+      <span class="material-symbols-rounded fill xs">wifi</span>
+      <span class="material-symbols-rounded fill xs">signal_cellular_4_bar</span>
+      <span class="material-symbols-rounded fill xs">battery_full</span>
+    </span>
+  </div>
+  <div class="chrome">
+    <div class="omnibox">
+      <span class="material-symbols-rounded xs" style="color:#2c5ea8">lock</span>
+      thunderplay.app/p/beast-hunt-iii
+    </div>
+  </div>
+  <div class="web-body">
+    <header>
+      <h1>Beast Hunt - III - 4+ stars</h1>
+      <div class="meta">6 tracks · expires in 5 days</div>
+    </header>
+    <ol>
+      <li class="cur">
+        <div class="num">1</div>
+        <div class="t"><strong>instrumental-hunt-tracking-90s-1660a792</strong><span>Beast Hunt / III</span></div>
+      </li>
+      <li>
+        <div class="num">2</div>
+        <div class="t"><strong>tribal-drums-chase-bed-90s-8f3a21c1</strong><span>Beast Hunt / III</span></div>
+      </li>
+      <li>
+        <div class="num">3</div>
+        <div class="t"><strong>low-brass-pursuit-90s-c52a573a</strong><span>Beast Hunt / III</span></div>
+      </li>
+      <li>
+        <div class="num">4</div>
+        <div class="t"><strong>percussive-trail-strings-90s-a91b0e44</strong><span>Beast Hunt / III</span></div>
+      </li>
+      <li>
+        <div class="num">5</div>
+        <div class="t"><strong>war-horn-staccato-90s-670a6ef0</strong><span>Beast Hunt / III</span></div>
+      </li>
+    </ol>
+    <div class="web-foot">
+      <div class="web-bar">
+        <div class="circ">‹</div>
+        <div class="circ primary">❚❚</div>
+        <div class="circ">›</div>
+        <div class="now">
+          <strong>instrumental-hunt-tracking-90s-1660a792</strong>
+          <span>Beast Hunt / III</span>
+        </div>
+      </div>
+      <div class="fake-audio">
+        <span>0:34</span>
+        <div class="a-bar"><i></i></div>
+        <span>1:30</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  const screen = new URLSearchParams(location.search).get("screen") || "library";
+  document.querySelectorAll("[data-screen]").forEach((el) => {
+    el.classList.toggle("show", el.dataset.screen === screen);
+  });
+</script>
+</body>
+</html>

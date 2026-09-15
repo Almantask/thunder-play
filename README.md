@@ -11,6 +11,37 @@ The catalog is the WAV tree in `music\`. `tools/transcode/` can mirror it to sma
 `music-mobile\`, and Settings can point the app there instead, but nothing maintains that mirror
 and the app does not need it.
 
+## Screens
+
+Library, Now Playing, playlists, listening history, prompt insights, A/B judging, settings, and
+the public share player a link opens in any browser.
+
+<p align="center">
+  <img src="docs/screenshots/library.png" width="240" alt="Library: combinable filters, star ratings, downloads and the mini player">
+  <img src="docs/screenshots/now-playing.png" width="240" alt="Now Playing: seek, shuffle, repeat, star rating and generator metadata">
+  <img src="docs/screenshots/ab-test.png" width="240" alt="A/B judging: two takes side by side, swipe or tap to keep one or call a tie">
+</p>
+<p align="center">
+  <img src="docs/screenshots/history.png" width="240" alt="History: most-played tracks and recent listening over 7 days, 30 days or all time">
+  <img src="docs/screenshots/prompts.png" width="240" alt="Prompt insights: which prompt words earn the highest and lowest star ratings">
+  <img src="docs/screenshots/playlists.png" width="240" alt="Playlists: local lists and a live 7-day share link">
+</p>
+<p align="center">
+  <img src="docs/screenshots/settings.png" width="240" alt="Settings: Drive refresh, crossfade length and A/B testing">
+  <img src="docs/screenshots/web-player.png" width="240" alt="Public web player for a shared playlist, no app required">
+</p>
+
+| Screen | What it is showing |
+|---|---|
+| **Library** | Stars, category, intensity and sort combine on one row. Rate in the list; a pin means the track is on the device, a cloud means it still streams from Drive. |
+| **Now Playing** | Seek, shuffle, repeat, the same 1–5 stars as the lock-screen heart, and the generator prompt, instruments and codec under *Details*. *Up next* is the queue icon. |
+| **A/B** | Two rival takes of one cue. Tap either to hear it (no crossfade), swipe or tap *Keep* toward the winner, or *Tie* to keep both. The tab itself is switched on in Settings. |
+| **History** | Every play, not just a counter: most-played and recent listening over 7 days, 30 days or all time. |
+| **Prompts** | The same History screen's other tab. Averages your stars across prompt words (and instruments / genres); a term needs three rated tracks before it ranks. |
+| **Playlists** | Lists you keep, plus a 7-day share link when one is live. The same share can be made from any filtered library view. |
+| **Settings** | How often Drive is refreshed, whether new tracks download on their own, crossfade length (0–12 s), and the A/B tab. |
+| **Web player** | What the other person sees. No app, expires with the link. |
+
 ## What it does
 
 - **Syncs with Drive.** Drop a track into `Music-And-Fx-Generated-Library\music\` (or add it
@@ -62,9 +93,11 @@ app/                     Android app (Kotlin, Compose, Media3)
   stats/                 ratings and play history (Room + Firestore)
   playlist/              playlists, share links, track export
   sync/                  catalog refresh, WorkManager jobs, Drive trash
-  ui/                    Library, Now Playing, Playlists, History, Settings
+  ui/                    Library, Now Playing, Playlists, History, A/B, Settings
 web/                     the public share player (Firebase Hosting)
+docs/screenshots/        README captures of the screens above
 tools/transcode/         ffmpeg WAV -> AAC mirror
+tools/screenshots/       HTML stand-ins used to render those captures
 ```
 
 ## Why it is built this way
